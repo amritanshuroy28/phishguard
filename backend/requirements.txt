@@ -1,0 +1,31 @@
+# PhishGuard Backend Requirements
+# Install: pip install -r requirements.txt
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+starlette>=0.35.0
+
+# Async HTTP client (for CTI lookups)
+aiohttp>=3.9.0
+httpx>=0.26.0
+
+# Data validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Optional: Production server
+# gunicorn>=21.0.0
+
+# Security (optional)
+# python-jose[cryptography]>=3.3.0  # JWT authentication
+# passlib[bcrypt]>=1.7.4  # Password hashing
+
+# Development
+# pytest>=8.0.0
+# pytest-asyncio>=0.23.0
+# httpx>=0.26.0  # For testing
+
+# ML Pipeline imports (these should already be in ml_pipeline/requirements.txt)
+# xgboost>=2.0.0
+# scikit-learn>=1.3.0

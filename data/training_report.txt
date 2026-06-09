@@ -1,0 +1,75 @@
+======================================================================
+PHISHGUARD ML MODEL TRAINING REPORT
+======================================================================
+
+Generated: 2026-06-08 10:40:03
+
+----------------------------------------------------------------------
+1. DATASET SUMMARY
+----------------------------------------------------------------------
+   Total Samples: 320
+   Phishing URLs:  160
+   Legitimate URLs:160
+   Features:      33
+
+----------------------------------------------------------------------
+2. MODEL CONFIGURATION
+----------------------------------------------------------------------
+   n_estimators: 100
+   max_depth: 6
+   learning_rate: 0.1
+   subsample: 0.8
+   colsample_bytree: 0.8
+   min_child_weight: 1
+   gamma: 0
+   reg_alpha: 0
+   reg_lambda: 1
+   scale_pos_weight: 1
+   objective: binary:logistic
+   eval_metric: auc
+   use_label_encoder: False
+   random_state: 42
+
+----------------------------------------------------------------------
+3. CROSS-VALIDATION RESULTS
+----------------------------------------------------------------------
+   Folds:         5
+   Mean Accuracy: 0.9844
+   Std Dev:       0.0078
+
+   Fold Scores:  ['0.9808', '0.9804', '0.9804', '1.0000', '0.9804']
+
+----------------------------------------------------------------------
+4. TEST SET EVALUATION
+----------------------------------------------------------------------
+   Accuracy:   1.0000 (100.00%)
+   Precision:  1.0000
+   Recall:     1.0000
+   F1 Score:   1.0000
+   ROC AUC:    1.0000
+
+   Confusion Matrix:
+   True Negatives:  32
+   False Positives: 0
+   False Negatives: 0
+   True Positives:  32
+
+   ✓ TARGET ACHIEVED: Model meets >= 95% accuracy requirement
+
+----------------------------------------------------------------------
+5. TOP FEATURE IMPORTANCES
+----------------------------------------------------------------------
+    1. has_suspicious_path           : 0.6730
+    2. suspicious_path_count         : 0.1799
+    3. special_char_count            : 0.0550
+    4. url_length                    : 0.0415
+    5. subdomain_count               : 0.0149
+    6. domain_length                 : 0.0098
+    7. suspicious_pattern_score      : 0.0096
+    8. typosquatting_score           : 0.0085
+    9. url_entropy                   : 0.0070
+   10. path_length                   : 0.0005
+
+======================================================================
+END OF REPORT
+======================================================================

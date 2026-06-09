@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PhishGuard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="popup-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <img src="icons/icon32.png" alt="PhishGuard" class="logo-icon">
+                <h1>PhishGuard</h1>
+            </div>
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot"></span>
+                <span class="status-text">Checking...</span>
+            </div>
+        </header>
+
+        <!-- Current URL Analysis -->
+        <section class="analysis-section" id="analysisSection">
+            <div class="current-url">
+                <label>Current Page</label>
+                <div class="url-display" id="currentUrl">Loading...</div>
+            </div>
+
+            <div class="result-card" id="resultCard">
+                <div class="risk-badge" id="riskBadge">
+                    <span class="risk-icon" id="riskIcon">⏳</span>
+                    <span class="risk-label" id="riskLabel">Analyzing...</span>
+                </div>
+
+                <div class="score-display">
+                    <div class="score-circle" id="scoreCircle">
+                        <span class="score-value" id="scoreValue">--</span>
+                        <span class="score-label">Risk Score</span>
+                    </div>
+                </div>
+
+                <div class="result-details" id="resultDetails">
+                    <!-- Threat information will be inserted here -->
+                </div>
+
+                <div class="ml-info" id="mlInfo">
+                    <span>ML Confidence: <strong id="mlConfidence">--</strong></span>
+                    <span>CTI Sources: <strong id="ctiCount">--</strong></span>
+                </div>
+
+                <div class="processing-time" id="processingTime">
+                    Analysis time: <span>--</span>ms
+                </div>
+            </div>
+        </section>
+
+        <!-- Threat List -->
+        <section class="threats-section" id="threatsSection" style="display: none;">
+            <h2>Detected Threats</h2>
+            <div class="threat-list" id="threatList">
+                <!-- Threats will be inserted here -->
+            </div>
+        </section>
+
+        <!-- CTI Results -->
+        <section class="cti-section" id="ctiSection" style="display: none;">
+            <h2>Threat Intelligence</h2>
+            <div class="cti-list" id="ctiList">
+                <!-- CTI results will be inserted here -->
+            </div>
+        </section>
+
+        <!-- Actions -->
+        <section class="actions-section">
+            <button class="btn btn-primary" id="analyzeBtn">
+                <span class="btn-icon">🔄</span>
+                Re-analyze
+            </button>
+            <button class="btn btn-secondary" id="historyBtn">
+                <span class="btn-icon">📋</span>
+                History
+            </button>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <a href="#" id="openDashboard" class="footer-link">
+                Open Dashboard →
+            </a>
+            <span class="version">v1.0.0</span>
+        </footer>
+    </div>
+
+    <!-- History Panel (initially hidden) -->
+    <div class="history-panel" id="historyPanel" style="display: none;">
+        <div class="history-header">
+            <h2>Scan History</h2>
+            <button class="close-btn" id="closeHistory">×</button>
+        </div>
+        <div class="history-list" id="historyList">
+            <!-- History items will be inserted here -->
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="spinner"></div>
+        <span>Analyzing...</span>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

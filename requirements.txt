@@ -1,0 +1,92 @@
+# PhishGuard - Complete Requirements
+# ========================
+
+# Install all at once:
+# pip install -r requirements.txt
+
+# Or install per component:
+# cd ml_pipeline && pip install -r requirements.txt
+# cd ../backend && pip install -r requirements.txt
+
+# =============================================================================
+# ML PIPELINE REQUIREMENTS
+# =============================================================================
+
+# Core ML
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+scipy>=1.10.0
+
+# Visualization (optional for ML training)
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Feature extraction & networking
+requests>=2.31.0
+tqdm>=4.66.0
+urllib3>=2.0.0
+
+# DNS/WHOIS (optional for enhanced features)
+python-whois>=0.9.0
+dnspython>=2.4.0
+idna>=3.4
+
+# =============================================================================
+# BACKEND REQUIREMENTS
+# =============================================================================
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+starlette>=0.35.0
+
+# Async HTTP client
+aiohttp>=3.9.0
+httpx>=0.26.0
+
+# Data validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Production deployment (optional)
+gunicorn>=21.0.0
+
+# =============================================================================
+# CHROME EXTENSION
+# =============================================================================
+# No Python dependencies - pure JavaScript
+# Requires Chrome 88+ (Manifest V3 support)
+
+# =============================================================================
+# FRONTEND REQUIREMENTS
+# =============================================================================
+# (managed via package.json - run `npm install` in frontend/)
+
+# Core
+react>=18.2.0
+react-dom>=18.2.0
+react-router-dom>=6.22.0
+
+# Data fetching
+axios>=1.6.0
+@tanstack/react-query>=5.19.0
+
+# UI
+tailwindcss>=3.4.0
+recharts>=2.12.0
+lucide-react>=0.323.0
+
+# Build
+vite>=5.1.0
+@vitejs/plugin-react>=4.2.0
+
+# =============================================================================
+# DEVELOPMENT TOOLS (optional)
+# =============================================================================
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx>=0.26.0  # For API testing

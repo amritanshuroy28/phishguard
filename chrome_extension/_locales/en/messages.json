@@ -1,0 +1,10 @@
+{
+    "extension_name": {
+        "message": "PhishGuard",
+        "description": "Extension name"
+    },
+    "extension_description": {
+        "message": "ML-Powered Phishing URL Detection with Cyber Threat Intelligence Integration",
+        "description": "Extension description"
+    }
+}

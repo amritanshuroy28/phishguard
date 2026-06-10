@@ -1,0 +1,73 @@
+{
+  "timestamp": "2026-06-10T09:22:48.424801",
+  "dataset": "UCI Phishing Websites (11,055 rows)",
+  "features": [
+    "having_IP_Address",
+    "URL_Length",
+    "Shortining_Service",
+    "having_At_Symbol",
+    "double_slash_redirecting",
+    "Prefix_Suffix",
+    "having_Sub_Domain",
+    "SSLfinal_State",
+    "Domain_registeration_length",
+    "Favicon",
+    "port",
+    "HTTPS_token",
+    "Request_URL",
+    "URL_of_Anchor",
+    "Links_in_tags",
+    "SFH",
+    "Submitting_to_email",
+    "Abnormal_URL",
+    "Redirect",
+    "on_mouseover",
+    "RightClick",
+    "popUpWidnow",
+    "Iframe",
+    "age_of_domain",
+    "DNSRecord",
+    "web_traffic",
+    "Page_Rank",
+    "Google_Index",
+    "Links_pointing_to_page",
+    "Statistical_report"
+  ],
+  "metrics": {
+    "accuracy": 0.9719583898688376,
+    "precision": 0.9679743795036029,
+    "recall": 0.9821283509341998,
+    "f1_score": 0.975,
+    "roc_auc": 0.9966909265737164
+  },
+  "confusion_matrix": [
+    [
+      940,
+      40
+    ],
+    [
+      22,
+      1209
+    ]
+  ],
+  "best_params": {
+    "n_estimators": 200,
+    "max_depth": 6,
+    "learning_rate": 0.1,
+    "subsample": 0.9,
+    "colsample_bytree": 0.9,
+    "min_child_weight": 3,
+    "objective": "binary:logistic",
+    "eval_metric": "logloss",
+    "random_state": 42,
+    "use_label_encoder": false,
+    "n_jobs": -1
+  },
+  "cv_scores": [
+    0.9655172413793104,
+    0.9592990390050876,
+    0.964951950254381,
+    0.9643866591294517,
+    0.9677601809954751
+  ]
+}

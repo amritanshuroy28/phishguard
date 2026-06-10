@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "default_locale": "en",
   "name": "PhishGuard",
   "version": "1.0.0",
   "description": "ML-Powered Phishing URL Detection with Cyber Threat Intelligence Integration",

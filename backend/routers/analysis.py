@@ -39,7 +39,7 @@ from schemas.schemas import (
 )
 
 # Import services
-from services.ml_service import get_ml_service
+from services.ensemble_service import get_ensemble_service
 from services.cti_service import get_cti_service
 from services.domain_service import get_domain_service
 
@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
 
 # Global instances
-ml_service = get_ml_service()
+ensemble_service = get_ensemble_service()
 cti_service = get_cti_service()
 domain_service = get_domain_service()
 feature_extractor = URLFeatureExtractor()
@@ -304,12 +304,9 @@ async def analyze_url_internal(
         features_obj = feature_extractor.extract_with_dns(url, whois_result=whois_data, dns_result=dns_data)
         features = features_to_schema(features_obj)
 
-        # 3. Prepare feature array for ML
-        feature_array = features_obj.to_feature_array()
-
-        # 4. ML inference (synchronous)
-        logger.info(f"[{analysis_id}] Running ML inference...")
-        is_ml_phishing, ml_confidence = ml_service.predict(feature_array)
+        # 3. ML inference (synchronous ensemble — 3 models, ~2ms)
+        logger.info(f"[{analysis_id}] Running ensemble ML inference (42 features)...")
+        is_ml_phishing, ml_confidence = ensemble_service.predict(features_obj.to_feature_array())
 
         # 5. CTI lookups (asynchronous, concurrent)
         cti_results: List[CTIResult] = []
@@ -358,7 +355,7 @@ async def analyze_url_internal(
             is_malicious=is_malicious,
             ml_prediction=is_ml_phishing,
             ml_confidence=round(ml_confidence, 4),
-            ml_model_version=ml_service.version,
+            ml_model_version="ensemble-v1.0",
             ctis=cti_results,
             threats=threats,
             features=features if include_raw_features else None,
@@ -391,7 +388,7 @@ async def analyze_url_internal(
             is_malicious=False,
             ml_prediction=False,
             ml_confidence=0.0,
-            ml_model_version=ml_service.version,
+            ml_model_version="ensemble-v1.0",
             ctis=[],
             threats=[],
             features=features if include_raw_features and features_obj else None,
@@ -465,7 +462,7 @@ async def batch_analyze(request: BatchAnalyzeRequest):
                 is_malicious=False,
                 ml_prediction=False,
                 ml_confidence=0.0,
-                ml_model_version=ml_service.version,
+                ml_model_version="ensemble-v1.0",
                 ctis=[],
                 threats=[],
                 processing_time_ms=0.0,
@@ -493,11 +490,13 @@ async def health_check():
     Health check endpoint.
     Returns API status and model loading information.
     """
+    einfo = ensemble_service.get_info()
+    loaded = [n for n, m in einfo["models"].items() if m["loaded"]]
     return HealthStatus(
         status="healthy",
         api_version="1.0.0",
-        ml_model_loaded=ml_service.is_loaded,
-        ml_model_version=ml_service.version if ml_service.is_loaded else None,
+        ml_model_loaded=len(loaded) > 0,
+        ml_model_version=f"ensemble:{','.join(loaded)}" if loaded else None,
         timestamp=datetime.now(timezone.utc)
     )
 
@@ -507,15 +506,19 @@ async def model_info():
     """
     Get information about the loaded ML model.
     """
-    info = ml_service.get_model_info()
+    info = ensemble_service.get_info()
+    loaded = [n for n, m in info["models"].items() if m["loaded"]]
+    acc  = max((m["accuracy"] for m in info["models"].values() if m["loaded"] and m["accuracy"] is not None), default=0.0)
+    f1   = max((m["f1_score"]   for m in info["models"].values() if m["loaded"] and m["f1_score"]   is not None), default=0.0)
+    auc  = max((m["roc_auc"]     for m in info["models"].values() if m["loaded"] and m["roc_auc"]     is not None), default=0.0)
 
     return ModelInfo(
-        version=info["version"],
-        feature_count=info["feature_count"],
-        training_date=info.get("training_date", "unknown"),
-        accuracy=0.0,  # Would be loaded from model metadata
-        f1_score=0.0,
-        auc_score=0.0
+        version=f"ensemble:{','.join(loaded)}" if loaded else "no models loaded",
+        feature_count=info["n_features"],
+        training_date="unknown",
+        accuracy=acc,
+        f1_score=f1,
+        auc_score=auc
     )
 
 

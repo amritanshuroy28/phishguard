@@ -1,0 +1,93 @@
+{
+  "timestamp": "2026-06-10T10:56:22.325820",
+  "dataset": "shashwatwork/phishing-dataset-for-machine-learning \u2014 Phishing_Legitimate_full.csv",
+  "total_samples": 2000,
+  "features": [
+    "id",
+    "NumDots",
+    "SubdomainLevel",
+    "PathLevel",
+    "UrlLength",
+    "NumDash",
+    "NumDashInHostname",
+    "AtSymbol",
+    "TildeSymbol",
+    "NumUnderscore",
+    "NumPercent",
+    "NumQueryComponents",
+    "NumAmpersand",
+    "NumHash",
+    "NumNumericChars",
+    "NoHttps",
+    "RandomString",
+    "IpAddress",
+    "DomainInSubdomains",
+    "DomainInPaths",
+    "HttpsInHostname",
+    "HostnameLength",
+    "PathLength",
+    "QueryLength",
+    "DoubleSlashInPath",
+    "NumSensitiveWords",
+    "EmbeddedBrandName",
+    "PctExtHyperlinks",
+    "PctExtResourceUrls",
+    "ExtFavicon",
+    "InsecureForms",
+    "RelativeFormAction",
+    "ExtFormAction",
+    "AbnormalFormAction",
+    "PctNullSelfRedirectHyperlinks",
+    "FrequentDomainNameMismatch",
+    "FakeLinkInStatusBar",
+    "RightClickDisabled",
+    "PopUpWindow",
+    "SubmitInfoToEmail",
+    "IframeOrFrame",
+    "MissingTitle",
+    "ImagesOnlyInForm",
+    "SubdomainLevelRT",
+    "UrlLengthRT",
+    "PctExtResourceUrlsRT",
+    "AbnormalExtFormActionR",
+    "ExtMetaScriptLinkRT",
+    "PctExtNullSelfRedirectHyperlinksRT"
+  ],
+  "metrics": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "roc_auc": 1.0
+  },
+  "confusion_matrix": [
+    [
+      1000,
+      0
+    ],
+    [
+      0,
+      1000
+    ]
+  ],
+  "best_params": {
+    "n_estimators": 200,
+    "max_depth": 4,
+    "learning_rate": 0.15,
+    "subsample": 0.9,
+    "colsample_bytree": 0.9,
+    "min_child_weight": 1,
+    "objective": "binary:logistic",
+    "eval_metric": "logloss",
+    "random_state": 42,
+    "use_label_encoder": false,
+    "n_jobs": -1
+  },
+  "cv_scores": [
+    1.0,
+    1.0,
+    1.0,
+    0.999375,
+    1.0
+  ]
+}

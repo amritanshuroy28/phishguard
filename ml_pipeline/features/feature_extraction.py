@@ -156,14 +156,26 @@ class URLFeatures:
     potential_brand: Optional[str] = None
     levenshtein_distance: Optional[int] = None
 
+    # ── Unified 42-feature set (indices 0–32 = original 33, 33–41 = new 9) ──
+    num_dots: int = 0
+    num_dash: int = 0
+    num_ampersand: int = 0
+    num_equals: int = 0
+    num_underscore: int = 0
+    hostname_length: int = 0
+    url_char_prob: float = 0.0
+    char_continuation_rate: float = 0.0
+    has_obfuscation: bool = False
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert features to dictionary for ML pipeline."""
         return {k: v for k, v in self.__dict__.items()}
 
     def to_feature_array(self) -> List[float]:
-        """Convert to array for model inference."""
+        """Convert to array for model inference. Returns 42-element list."""
         # Define feature order for consistent array conversion
         feature_order = [
+            # Original 33 features (indices 0–32)
             'url_length', 'path_length', 'query_length', 'fragment_length',
             'subdomain_count', 'subdomain_length', 'path_depth', 'url_entropy',
             'domain_length', 'is_free_domain_provider',
@@ -173,7 +185,11 @@ class URLFeatures:
             'has_login_keywords', 'has_brand_in_subdomain', 'suspicious_pattern_score',
             'special_char_count', 'digit_count', 'digit_ratio', 'uppercase_count',
             'has_unicode', 'punycode_detected', 'domain_age_days', 'is_recent_domain',
-            'registrar_suspicious', 'dns_record_exists', 'typosquatting_score'
+            'registrar_suspicious', 'dns_record_exists', 'typosquatting_score',
+            # New 9 features (indices 33–41)
+            'num_dots', 'num_dash', 'num_ampersand', 'num_equals',
+            'num_underscore', 'hostname_length', 'url_char_prob',
+            'char_continuation_rate', 'has_obfuscation',
         ]
         return [self.__dict__.get(k, 0.0) if self.__dict__.get(k) is not None else 0.0
                 for k in feature_order]
@@ -490,6 +506,45 @@ class URLFeatureExtractor:
         # URL entropy (randomness indicator)
         url_entropy = calculate_entropy(url)
 
+        # ── New 9 features: URL-level character counts ──
+        num_dots        = url.count('.')
+        num_dash        = url.count('-')
+        num_ampersand   = url.count('&')
+        num_equals      = url.count('=')
+        num_underscore  = url.count('_')
+
+        # hostname length
+        if parsed and parsed.netloc:
+            hostname_length = len(parsed.netloc.split(':')[0])
+        else:
+            hostname_length = 0
+
+        # url_char_prob: fraction of alphanumeric chars (a-z, A-Z, 0-9)
+        if len(url) > 0:
+            alpha_num = sum(1 for c in url if c.isalnum())
+            url_char_prob = alpha_num / len(url)
+        else:
+            url_char_prob = 0.0
+
+        # char_continuation_rate: average run-length of consecutive non-separator chars
+        # separators: all characters that split word boundaries in URLs
+        separators = set('/?&#=:.;+@!$%^&*()_,-|=[]{}|\\"<>` \t\n\r')
+        if len(url) > 0:
+            runs = []
+            current_run = 0
+            for c in url:
+                if c not in separators:
+                    current_run += 1
+                else:
+                    if current_run > 0:
+                        runs.append(current_run)
+                    current_run = 0
+            if current_run > 0:
+                runs.append(current_run)
+            char_continuation_rate = float(sum(runs) / len(runs)) if runs else 0.0
+        else:
+            char_continuation_rate = 0.0
+
         return {
             'url_length': url_length,
             'path_length': path_length,
@@ -499,6 +554,14 @@ class URLFeatureExtractor:
             'subdomain_length': subdomain_length,
             'path_depth': path_depth,
             'url_entropy': url_entropy,
+            'num_dots': num_dots,
+            'num_dash': num_dash,
+            'num_ampersand': num_ampersand,
+            'num_equals': num_equals,
+            'num_underscore': num_underscore,
+            'hostname_length': hostname_length,
+            'url_char_prob': url_char_prob,
+            'char_continuation_rate': char_continuation_rate,
         }
 
     def _extract_domain_features(self, parsed) -> Dict[str, Any]:
@@ -608,6 +671,7 @@ class URLFeatureExtractor:
             'has_double_slash_redirect': has_double_slash,
             'has_data_uri': has_data_uri or has_js,
             'obfuscation_score': min(obfuscation_score, 5.0),  # Cap at 5.0
+            'has_obfuscation': bool(has_hex or has_ip or has_at),
         }
 
     def _extract_suspicious_patterns(self, url: str, parsed) -> Dict[str, Any]:
@@ -809,7 +873,10 @@ class URLFeatureExtractor:
             obfuscation_score=0.0, suspicious_path_count=0, has_suspicious_path=False,
             has_login_keywords=False, has_brand_in_subdomain=False, suspicious_pattern_score=0.0,
             special_char_count=0, digit_count=0, digit_ratio=0.0, uppercase_count=0,
-            has_unicode=False, punycode_detected=False
+            has_unicode=False, punycode_detected=False,
+            num_dots=0, num_dash=0, num_ampersand=0, num_equals=0,
+            num_underscore=0, hostname_length=0, url_char_prob=0.0,
+            char_continuation_rate=0.0, has_obfuscation=False,
         )
 
 

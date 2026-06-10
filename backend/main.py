@@ -62,14 +62,16 @@ async def lifespan(app: FastAPI):
     logger.info(f"API Key (VT): {'set' if os.getenv('VIRUSTOTAL_API_KEY') else 'not set'}")
 
     # Initialize services
-    from services.ml_service import get_ml_service
+    from services.ensemble_service import get_ensemble_service
     from services.cti_service import get_cti_service
 
-    ml_service = get_ml_service()
+    ensemble_service = get_ensemble_service()
     cti_service = get_cti_service()
 
-    logger.info(f"ML Service: {'loaded' if ml_service.is_loaded else 'using rule-based fallback'}")
-    logger.info(f"ML Model Version: {ml_service.version}")
+    info = ensemble_service.get_info()
+    loaded_models = [n for n, m in info["models"].items() if m["loaded"]]
+    logger.info(f"Ensemble Service: {len(loaded_models)}/{len(info['models'])} models loaded: {loaded_models}")
+    logger.info(f"Ensemble features: {info['n_features']}")
     logger.info(f"CTI Service: VirusTotal={'enabled' if cti_service.virustotal_enabled else 'disabled'}, "
                f"URLhaus={'enabled' if cti_service.urlhaus_enabled else 'disabled'}")
 

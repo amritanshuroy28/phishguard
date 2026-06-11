@@ -224,14 +224,6 @@ npm run build
 # Serve dist/ with nginx or similar
 ```
 
-## License
-
-MIT License - See LICENSE file for details.
-
-## Authors
-
-PhishGuard Development Team
-
 ## Acknowledgments
 
 - PhishTank for phishing URL data

@@ -279,6 +279,11 @@ def normalize_url(url: str) -> str:
     Returns:
         Normalized URL string
     """
+    # Skip normalization for non-HTTP schemes (data:, javascript:, etc.)
+    url_lower = url.strip().lower()
+    if url_lower.startswith(('data:', 'javascript:', 'blob:', 'file:')):
+        return url.strip()
+
     # Decode common encodings
     normalized = unquote(url)
     normalized = unquote(normalized)  # Double decode
@@ -376,7 +381,9 @@ class URLFeatureExtractor:
         # Extract each feature category
         length_features = self._extract_length_features(normalized, parsed)
         domain_features = self._extract_domain_features(parsed)
-        obfuscation_features = self._extract_obfuscation_features(normalized, parsed)
+        # Pass BOTH raw and normalized URL to obfuscation detector
+        # so hex-encoding (%XX) is detected before unquote() decodes it
+        obfuscation_features = self._extract_obfuscation_features(normalized, parsed, raw_url=url)
         suspicious_features = self._extract_suspicious_patterns(normalized, parsed)
         character_features = self._extract_character_features(normalized)
 
@@ -603,7 +610,7 @@ class URLFeatureExtractor:
             'is_free_domain_provider': is_free_provider,
         }
 
-    def _extract_obfuscation_features(self, url: str, parsed) -> Dict[str, Any]:
+    def _extract_obfuscation_features(self, url: str, parsed, raw_url: str = None) -> Dict[str, Any]:
         """
         Extract obfuscation indicators.
 
@@ -612,22 +619,24 @@ class URLFeatureExtractor:
         - IP addresses: 192.168.1.1 instead of domain
         - @ symbol: http://google.com@evil.com
         - Data URIs: data:text/html,<script>alert(1)</script>
+        - Base64 encoded payloads
         """
         obfuscation_score = 0.0
+        # Use the raw (pre-normalization) URL for encoding detection
+        # since normalize_url() decodes %XX sequences
+        check_url = raw_url if raw_url else url
 
-        # Hex encoding detection
+        # Hex encoding detection — check the RAW URL before decoding
         hex_pattern = re.compile(r'%[0-9A-Fa-f]{2}')
-        hex_matches = hex_pattern.findall(url)
+        hex_matches = hex_pattern.findall(check_url)
         has_hex = len(hex_matches) > 0
         hex_char_count = len(hex_matches)
 
         if has_hex:
             obfuscation_score += min(1.0, hex_char_count / 10)
             try:
-                # Verify decoding produces readable text
-                decoded = unquote(url)
-                # If decoding changes the URL significantly, it's suspicious
-                if decoded != url:
+                decoded = unquote(check_url)
+                if decoded != check_url:
                     obfuscation_score += 0.5
             except Exception:
                 pass
@@ -639,29 +648,44 @@ class URLFeatureExtractor:
         )
         has_ip = bool(ip_pattern.search(url))
         if has_ip:
-            obfuscation_score += 2.0  # High weight for IP addresses
+            obfuscation_score += 2.0
 
         # @ symbol (navigation bypass)
-        # In URLs, @ redirects to the domain after @, e.g., http://legit.com@evil.com
-        # Modern browsers block this but some phishing sites still use it
         has_at = '@' in url
         if has_at:
             obfuscation_score += 1.5
 
         # Double slash redirect (// at start of path)
         has_double_slash = '//' in url[url.find('://') + 3:] if '://' in url else False
-        if has_double_slash and url.startswith('http:') and '//' in url[5:10]:
+        if has_double_slash:
             obfuscation_score += 0.5
 
-        # Data URI detection
-        has_data_uri = url.lower().startswith('data:')
+        # Data URI detection — check RAW URL (before normalize adds https://)
+        has_data_uri = check_url.strip().lower().startswith('data:')
         if has_data_uri:
             obfuscation_score += 2.0
 
-        # JavaScript URI
-        has_js = url.lower().startswith('javascript:')
+        # JavaScript URI — check RAW URL
+        has_js = check_url.strip().lower().startswith('javascript:')
         if has_js:
             obfuscation_score += 2.0
+
+        # Base64 payload detection
+        # Look for base64-encoded strings in query params or path
+        base64_pattern = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
+        has_base64 = bool(base64_pattern.search(check_url))
+        if has_base64:
+            # Verify it's actually valid base64
+            import base64
+            for match in base64_pattern.finditer(check_url):
+                try:
+                    decoded = base64.b64decode(match.group() + '==').decode('utf-8', errors='ignore')
+                    # If decoded content looks like a URL or HTML, it's suspicious
+                    if any(sig in decoded.lower() for sig in ['http', '<script', '<html', 'alert(', '.com', '.net']):
+                        obfuscation_score += 1.5
+                        break
+                except Exception:
+                    pass
 
         return {
             'has_hex_encoding': has_hex,
@@ -671,7 +695,7 @@ class URLFeatureExtractor:
             'has_double_slash_redirect': has_double_slash,
             'has_data_uri': has_data_uri or has_js,
             'obfuscation_score': min(obfuscation_score, 5.0),  # Cap at 5.0
-            'has_obfuscation': bool(has_hex or has_ip or has_at),
+            'has_obfuscation': bool(has_hex or has_ip or has_at or has_data_uri or has_base64),
         }
 
     def _extract_suspicious_patterns(self, url: str, parsed) -> Dict[str, Any]:
@@ -810,6 +834,9 @@ class URLFeatureExtractor:
         best_distance = float('inf')
         best_brand = None
 
+        # Also check the full domain (e.g., "apple-support" against "apple")
+        full_domain = '.'.join(parts).rstrip('.')
+
         for brand, legitimate_domains in self.known_brands.items():
             for legitimate in legitimate_domains:
                 legitimate_base = legitimate.split('.')[0]
@@ -820,14 +847,37 @@ class URLFeatureExtractor:
                     best_match = legitimate_base
                     best_brand = brand
 
+                # Also check hyphenated variants: "apple-support" vs "apple"
+                # If the base_domain contains a brand as a prefix/suffix with hyphen
+                if '-' in base_domain:
+                    parts_hyphen = base_domain.split('-')
+                    for part in parts_hyphen:
+                        d = levenshtein_distance(part.lower(), legitimate_base)
+                        if d <= 1 and d < best_distance:
+                            best_distance = max(d, 1)  # At least 1 since it has extra hyphenated text
+                            best_match = legitimate_base
+                            best_brand = brand
+
         # Calculate typosquatting score
-        # Lower distance = more suspicious (assuming intent to mislead)
+        # Distance 0 = exact brand match → NOT typosquatting (it IS the brand)
         # Distance of 1-2 = highly suspicious (likely typo)
         # Distance of 3-4 = moderate suspicion
         # Distance >= 5 = likely not typosquatting
 
+        # Check if this is the actual legitimate domain (exact match → not typosquatting)
+        is_legitimate = False
+        if best_brand:
+            for legit_domain in self.known_brands.get(best_brand, []):
+                if full_domain == legit_domain or base_domain == legit_domain.split('.')[0]:
+                    is_legitimate = True
+                    break
+
         typosquatting_score = 0.0
-        if best_distance <= 2:
+        if is_legitimate:
+            typosquatting_score = 0.0  # Exact brand domain — not typosquatting
+        elif best_distance == 0:
+            typosquatting_score = 0.0  # Exact base match (e.g., brand is part of domain)
+        elif best_distance <= 2:
             typosquatting_score = 2.0  # High confidence typo
         elif best_distance <= 4:
             typosquatting_score = 1.0  # Suspicious

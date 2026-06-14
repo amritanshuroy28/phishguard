@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 import asyncio
 
 # Import schemas
-from schemas.schemas import (
+from backend.schemas.schemas import (
     AnalyzeRequest, BatchAnalyzeRequest,
     AnalysisResult, BatchAnalysisResult,
     RiskLevel, ThreatCategory, ThreatDetail,
@@ -39,9 +39,9 @@ from schemas.schemas import (
 )
 
 # Import services
-from services.ensemble_service import get_ensemble_service
-from services.cti_service import get_cti_service
-from services.domain_service import get_domain_service
+from backend.services.ensemble_service import get_ensemble_service
+from backend.services.cti_service import get_cti_service
+from backend.services.domain_service import get_domain_service
 
 # For feature extraction
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "ml_pipeline"))
@@ -201,14 +201,7 @@ def extract_threats(
     # CTI-based threats
     for cti in cti_results:
         if cti.malicious:
-            if cti.source.value == "virustotal":
-                threats.append(ThreatDetail(
-                    category=ThreatCategory.PHISHING,
-                    confidence=cti.detection_rate,
-                    description=f"Flagged by {cti.positives} VirusTotal vendors",
-                    indicators=cti.metadata.get("malicious_vendors", [])[:5]
-                ))
-            elif cti.source.value == "urlhaus":
+            if cti.source.value == "urlhaus":
                 threat_type = cti.metadata.get("threat_type", "unknown")
                 threats.append(ThreatDetail(
                     category=ThreatCategory.MALWARE if "malware" in threat_type else ThreatCategory.PHISHING,
@@ -270,10 +263,12 @@ def features_to_schema(features_obj) -> URLFeatures:
 async def analyze_url_internal(
     url: str,
     include_raw_features: bool = False,
-    enable_cti: bool = True
+    enable_cti: bool = True,
+    fast_mode: bool = False
 ) -> AnalysisResult:
     """
     Internal URL analysis - orchestrates feature extraction, ML inference, and CTI lookups.
+    When fast_mode=True, DNS/WHOIS lookups are skipped for sub-500ms response.
     """
     start_time = time.time()
     analysis_id = str(uuid.uuid4())
@@ -281,31 +276,33 @@ async def analyze_url_internal(
     error_msg = None
 
     try:
-        # 1. Domain intelligence: DNS/WHOIS lookups (async, runs concurrently with feature extraction)
-        logger.info(f"[{analysis_id}] Gathering domain intelligence...")
-        domain_lookups = await domain_service.lookup_all(url)
-
-        # Separate WHOIS and DNS results
         whois_data = None
         dns_data = None
-        for lookup in domain_lookups:
-            lookup_dict = asdict(lookup)
-            if lookup.source == "whois":
-                # Build WHOIS dict without source/domain fields
-                whois_data = {k: v for k, v in lookup_dict.items()
-                              if k not in ['source', 'domain', 'response_time_ms', 'dns_error', 'whois_error']}
-            elif lookup.source == "dns":
-                # Build DNS dict without source/domain fields
-                dns_data = {k: v for k, v in lookup_dict.items()
-                            if k not in ['source', 'domain', 'response_time_ms', 'dns_error', 'whois_error']}
+
+        # 1. Domain intelligence: DNS/WHOIS lookups (skip in fast_mode)
+        if not fast_mode:
+            logger.info(f"[{analysis_id}] Gathering domain intelligence...")
+            domain_lookups = await domain_service.lookup_all(url)
+
+            # Separate WHOIS and DNS results
+            for lookup in domain_lookups:
+                lookup_dict = asdict(lookup)
+                if lookup.source == "whois":
+                    whois_data = {k: v for k, v in lookup_dict.items()
+                                  if k not in ['source', 'domain', 'response_time_ms', 'dns_error', 'whois_error']}
+                elif lookup.source == "dns":
+                    dns_data = {k: v for k, v in lookup_dict.items()
+                                if k not in ['source', 'domain', 'response_time_ms', 'dns_error', 'whois_error']}
+        else:
+            logger.info(f"[{analysis_id}] Fast mode: skipping DNS/WHOIS")
 
         # 2. Extract features (synchronous, fast) with DNS/WHOIS enrichment
         logger.info(f"[{analysis_id}] Extracting features for: {url[:60]}...")
         features_obj = feature_extractor.extract_with_dns(url, whois_result=whois_data, dns_result=dns_data)
         features = features_to_schema(features_obj)
 
-        # 3. ML inference (synchronous ensemble — 3 models, ~2ms)
-        logger.info(f"[{analysis_id}] Running ensemble ML inference (42 features)...")
+        # 3. ML inference (single ultimate XGBoost model, ~1-2ms)
+        logger.info(f"[{analysis_id}] Running ultimate ML inference (42 features)...")
         is_ml_phishing, ml_confidence = ensemble_service.predict(features_obj.to_feature_array())
 
         # 5. CTI lookups (asynchronous, concurrent)
@@ -355,7 +352,7 @@ async def analyze_url_internal(
             is_malicious=is_malicious,
             ml_prediction=is_ml_phishing,
             ml_confidence=round(ml_confidence, 4),
-            ml_model_version="ensemble-v1.0",
+            ml_model_version="ultimate-v1.0",
             ctis=cti_results,
             threats=threats,
             features=features if include_raw_features else None,
@@ -388,7 +385,7 @@ async def analyze_url_internal(
             is_malicious=False,
             ml_prediction=False,
             ml_confidence=0.0,
-            ml_model_version="ensemble-v1.0",
+            ml_model_version="ultimate-v1.0",
             ctis=[],
             threats=[],
             features=features if include_raw_features and features_obj else None,
@@ -416,7 +413,8 @@ async def analyze_url(request: AnalyzeRequest):
     result = await analyze_url_internal(
         url=request.url,
         include_raw_features=request.include_raw_features,
-        enable_cti=request.enable_cti
+        enable_cti=request.enable_cti,
+        fast_mode=request.fast_mode
     )
     return result
 
@@ -439,7 +437,8 @@ async def batch_analyze(request: BatchAnalyzeRequest):
             return await analyze_url_internal(
                 url=url,
                 include_raw_features=False,
-                enable_cti=request.enable_cti
+                enable_cti=request.enable_cti,
+                fast_mode=request.fast_mode
             )
 
     # Create tasks
@@ -462,7 +461,7 @@ async def batch_analyze(request: BatchAnalyzeRequest):
                 is_malicious=False,
                 ml_prediction=False,
                 ml_confidence=0.0,
-                ml_model_version="ensemble-v1.0",
+                ml_model_version="ultimate-v1.0",
                 ctis=[],
                 threats=[],
                 processing_time_ms=0.0,
@@ -490,13 +489,12 @@ async def health_check():
     Health check endpoint.
     Returns API status and model loading information.
     """
-    einfo = ensemble_service.get_info()
-    loaded = [n for n, m in einfo["models"].items() if m["loaded"]]
+    info = ensemble_service.get_info()
     return HealthStatus(
         status="healthy",
         api_version="1.0.0",
-        ml_model_loaded=len(loaded) > 0,
-        ml_model_version=f"ensemble:{','.join(loaded)}" if loaded else None,
+        ml_model_loaded=info["loaded"],
+        ml_model_version=info["model_version"] if info["loaded"] else None,
         timestamp=datetime.now(timezone.utc)
     )
 
@@ -507,18 +505,15 @@ async def model_info():
     Get information about the loaded ML model.
     """
     info = ensemble_service.get_info()
-    loaded = [n for n, m in info["models"].items() if m["loaded"]]
-    acc  = max((m["accuracy"] for m in info["models"].values() if m["loaded"] and m["accuracy"] is not None), default=0.0)
-    f1   = max((m["f1_score"]   for m in info["models"].values() if m["loaded"] and m["f1_score"]   is not None), default=0.0)
-    auc  = max((m["roc_auc"]     for m in info["models"].values() if m["loaded"] and m["roc_auc"]     is not None), default=0.0)
+    metrics = info.get("metrics", {})
 
     return ModelInfo(
-        version=f"ensemble:{','.join(loaded)}" if loaded else "no models loaded",
+        version=info["model_version"] if info["loaded"] else "no model loaded",
         feature_count=info["n_features"],
-        training_date="unknown",
-        accuracy=acc,
-        f1_score=f1,
-        auc_score=auc
+        training_date=info.get("trained_at", "unknown"),
+        accuracy=metrics.get("accuracy", 0.0),
+        f1_score=metrics.get("f1_score", 0.0),
+        auc_score=metrics.get("roc_auc", 0.0)
     )
 
 

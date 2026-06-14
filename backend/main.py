@@ -5,7 +5,7 @@ Main application entry point for the PhishGuard API.
 
 This API provides real-time URL analysis combining:
 - ML-based phishing detection (XGBoost)
-- Cyber Threat Intelligence (VirusTotal, URLhaus)
+- Cyber Threat Intelligence (URLhaus only)
 - DNS/WHOIS forensics
 
 Running the server:
@@ -59,21 +59,22 @@ async def lifespan(app: FastAPI):
 
     # Log environment
     logger.info(f"Environment: {'development' if os.getenv('DEBUG') else 'production'}")
-    logger.info(f"API Key (VT): {'set' if os.getenv('VIRUSTOTAL_API_KEY') else 'not set'}")
+    logger.info(f"API Keys: not used (ML-only)")
 
     # Initialize services
-    from services.ensemble_service import get_ensemble_service
-    from services.cti_service import get_cti_service
+    from backend.services.ensemble_service import get_ensemble_service
+    from backend.services.cti_service import get_cti_service
 
     ensemble_service = get_ensemble_service()
     cti_service = get_cti_service()
 
     info = ensemble_service.get_info()
-    loaded_models = [n for n, m in info["models"].items() if m["loaded"]]
-    logger.info(f"Ensemble Service: {len(loaded_models)}/{len(info['models'])} models loaded: {loaded_models}")
-    logger.info(f"Ensemble features: {info['n_features']}")
-    logger.info(f"CTI Service: VirusTotal={'enabled' if cti_service.virustotal_enabled else 'disabled'}, "
-               f"URLhaus={'enabled' if cti_service.urlhaus_enabled else 'disabled'}")
+    status = "loaded" if info["loaded"] else "FAILED"
+    test_acc = info["metrics"].get("accuracy", "?") if info["metrics"] else "?"
+    logger.info(f"ML Service: {status}, model={info['model_name']}, "
+                f"test_accuracy={test_acc}, cv_accuracy={info.get('cv_accuracy', '?')}")
+    logger.info(f"Features: {info['n_features']}")
+    logger.info(f"CTI Service: URLhaus only (no VirusTotal)")
 
     logger.info("=" * 60)
     logger.info("PhishGuard API Ready")
@@ -218,7 +219,7 @@ In production, add authentication middleware.
     # INCLUDE ROUTERS
     # =========================================================================
 
-    from routers.analysis import router as analysis_router
+    from backend.routers.analysis import router as analysis_router
 
     app.include_router(analysis_router)
 

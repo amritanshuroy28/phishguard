@@ -1,9 +1,20 @@
 """
-PhishGuard ML Service
-=======================
-Service for loading and running ML model inference.
-Optimized for <500ms response time.
+PhishGuard ML Service  [DEPRECATED]
+====================================
+⚠️  DEPRECATED — This module is no longer used.
+All ML inference is now handled by ensemble_service.py (UltimateMLService),
+which loads the single best XGBoost model from phishguard_ultimate.pkl.
+
+This file is kept for reference only. Do not import from here.
+Use:  from backend.services.ensemble_service import get_ensemble_service
 """
+
+import warnings
+warnings.warn(
+    "ml_service.py is deprecated. Use ensemble_service.py (UltimateMLService) instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import os
 import sys

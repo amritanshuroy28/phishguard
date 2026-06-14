@@ -82,17 +82,27 @@ export default function ScanURL() {
       {showResult && result && (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           {/* Result Header */}
-          <div className={`p-6 ${result.is_malicious ? 'bg-critical-light' : 'bg-safe-light'}`}>
+          <div className={`p-6 ${
+            result.risk_level === 'critical' || result.risk_level === 'high' ? 'bg-critical-light' :
+            result.risk_level === 'medium' ? 'bg-yellow-50' :
+            'bg-safe-light'
+          }`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                {result.is_malicious ? (
+                {result.risk_level === 'critical' || result.risk_level === 'high' ? (
                   <XCircle className="h-12 w-12 text-critical" />
+                ) : result.risk_level === 'medium' ? (
+                  <XCircle className="h-12 w-12 text-yellow-500" />
                 ) : (
                   <CheckCircle className="h-12 w-12 text-safe" />
                 )}
                 <div>
                   <h2 className="text-xl font-bold">
-                    {result.is_malicious ? 'Malicious URL Detected!' : 'URL Appears Safe'}
+                    {result.risk_level === 'critical' ? 'Critical Threat Detected!' :
+                     result.risk_level === 'high' ? 'Malicious URL Detected!' :
+                     result.risk_level === 'medium' ? 'Suspicious URL — Proceed with Caution' :
+                     result.risk_level === 'low' ? 'Low Risk — Likely Safe' :
+                     'URL Appears Safe'}
                   </h2>
                   <p className="text-gray-600">{truncateUrl(result.url)}</p>
                 </div>

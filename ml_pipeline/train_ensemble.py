@@ -19,6 +19,7 @@ import json
 import pickle
 import logging
 import zipfile
+import random
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
@@ -33,8 +34,9 @@ import seaborn as sns
 
 # Resolve project root and add to path
 PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+PHISH_DB_PATH = Path("/tmp/phish_db")
 
+sys.path.insert(0, str(PROJECT_ROOT))
 from ml_pipeline.features.feature_extraction import (
     URLFeatureExtractor, URLFeatures
 )
@@ -169,6 +171,54 @@ def _map_kaggle_to_42(df: pd.DataFrame, extractor: URLFeatureExtractor
     for i, (url, label) in enumerate(zip(urls, df['CLASS_LABEL'])):
         try:
             f = extractor.extract(url)
+            row = df.iloc[i]
+            
+            # OVERWRITE synthesized features with direct ground truth from the row
+            f.url_length = int(row.get('UrlLength', f.url_length))
+            f.path_length = int(row.get('PathLength', f.path_length))
+            f.query_length = int(row.get('QueryLength', f.query_length))
+            f.subdomain_count = int(row.get('SubdomainLevel', f.subdomain_count))
+            f.path_depth = int(row.get('PathLevel', f.path_depth))
+            f.domain_length = int(row.get('HostnameLength', f.domain_length))
+            f.has_ip_address = bool(row.get('IpAddress', f.has_ip_address))
+            f.has_at_symbol = bool(row.get('AtSymbol', f.has_at_symbol))
+            f.has_double_slash_redirect = bool(row.get('DoubleSlashInPath', f.has_double_slash_redirect))
+            f.num_dots = int(row.get('NumDots', f.num_dots))
+            f.num_dash = int(row.get('NumDash', f.num_dash))
+            f.num_underscore = int(row.get('NumUnderscore', f.num_underscore))
+            f.num_ampersand = int(row.get('NumAmpersand', f.num_ampersand))
+            f.has_hex_encoding = bool(row.get('NumPercent', 0) > 0)
+            f.hex_encoded_chars = int(row.get('NumPercent', 0))
+            f.digit_count = int(row.get('NumNumericChars', f.digit_count))
+            if f.url_length > 0:
+                f.digit_ratio = f.digit_count / f.url_length
+            f.hostname_length = int(row.get('HostnameLength', f.hostname_length))
+            f.suspicious_path_count = int(row.get('NumSensitiveWords', f.suspicious_path_count))
+            f.has_suspicious_path = f.suspicious_path_count > 0
+            f.has_brand_in_subdomain = bool(row.get('DomainInSubdomains', f.has_brand_in_subdomain))
+            if 'RandomString' in row:
+                f.url_entropy = float(row['RandomString']) * 2.0
+            if 'NoHttps' in row and int(row['NoHttps']) == 1:
+                f.suspicious_pattern_score += 1.0
+            if 'InsecureForms' in row and int(row['InsecureForms']) == 1:
+                f.suspicious_pattern_score += 2.0
+            if 'SubmitInfoToEmail' in row and int(row['SubmitInfoToEmail']) == 1:
+                f.suspicious_pattern_score += 3.0
+            if 'IframeOrFrame' in row and int(row['IframeOrFrame']) == 1:
+                f.suspicious_pattern_score += 1.0
+            if 'PctExtHyperlinks' in row and float(row['PctExtHyperlinks']) > 0.5:
+                f.suspicious_pattern_score += 1.0
+            if 'NumHash' in row and int(row['NumHash']) > 0:
+                f.suspicious_pattern_score += 0.5
+            if 'AbnormalFormAction' in row and int(row['AbnormalFormAction']) == 1:
+                f.suspicious_pattern_score += 2.0
+            if 'FrequentDomainNameMismatch' in row and int(row['FrequentDomainNameMismatch']) == 1:
+                f.suspicious_pattern_score += 1.0
+            if 'RightClickDisabled' in row and int(row['RightClickDisabled']) == 1:
+                f.suspicious_pattern_score += 1.0
+            if 'PopUpWindow' in row and int(row['PopUpWindow']) == 1:
+                f.suspicious_pattern_score += 1.0
+            
             arr = f.to_feature_array()
             # Sanitise: replace None/NaN
             arr = [0.0 if (v is None or (isinstance(v, float) and np.isnan(v))) else v
@@ -195,6 +245,27 @@ def _map_uci_to_42(df: pd.DataFrame, extractor: URLFeatureExtractor
     for i, (url, label) in enumerate(zip(urls, df['label'])):
         try:
             f = extractor.extract(url)
+            row = df.iloc[i]
+            
+            # OVERWRITE synthesized features with direct ground truth from the row
+            f.url_length = int(row.get('URLLength', f.url_length))
+            f.domain_length = int(row.get('DomainLength', f.domain_length))
+            f.has_ip_address = bool(row.get('IsDomainIP', f.has_ip_address))
+            f.char_continuation_rate = float(row.get('CharContinuationRate', f.char_continuation_rate))
+            f.url_char_prob = float(row.get('URLCharProb', f.url_char_prob))
+            f.subdomain_count = int(row.get('NoOfSubDomain', f.subdomain_count))
+            f.has_obfuscation = bool(row.get('HasObfuscation', f.has_obfuscation))
+            f.hex_encoded_chars = int(row.get('NoOfObfuscatedChar', f.hex_encoded_chars))
+            f.has_hex_encoding = f.hex_encoded_chars > 0
+            f.digit_count = int(row.get('NoOfDegitsInURL', f.digit_count))
+            f.digit_ratio = float(row.get('DegitRatioInURL', f.digit_ratio))
+            f.num_equals = int(row.get('NoOfEqualsInURL', f.num_equals))
+            f.num_ampersand = int(row.get('NoOfAmpersandInURL', f.num_ampersand))
+            
+            # Map special chars ratio
+            sp_chars = int(row.get('NoOfOtherSpecialCharsInURL', 0))
+            f.special_char_count = sp_chars + f.num_equals + f.num_ampersand
+            
             arr = f.to_feature_array()
             arr = [0.0 if (v is None or (isinstance(v, float) and np.isnan(v))) else v
                    for v in arr]
@@ -417,7 +488,7 @@ def evaluate_ensemble(models: Dict[str, xgb.XGBClassifier],
         results[name]["confusion_matrix"] = cm
 
     # Average ensemble
-    avg_proba = mean(all_probs)
+    avg_proba = np.mean(all_probs, axis=0)
     ensemble_pred = (avg_proba >= 0.5).astype(int)
     results["ensemble"] = {
         "accuracy"  : accuracy_score(y_test, ensemble_pred),
@@ -436,14 +507,178 @@ def evaluate_ensemble(models: Dict[str, xgb.XGBClassifier],
 
 
 # ---------------------------------------------------------------------------
+# PHISH.DATABASE LOADER
+# ---------------------------------------------------------------------------
+def _load_phishdb_urls(max_samples: int = 100_000,
+                       valid_only: bool = True
+                       ) -> Tuple[List[str], List[int]]:
+    """
+    Load phishing URLs from the Phishing.Database repository.
+    Filters to http/https URLs with valid structure.
+    Returns (urls, labels) where label=1 for all (phishing).
+    """
+    phishdb_file = PHISH_DB_PATH / "phishing-links-ACTIVE.txt"
+    legit_file   = PHISH_DB_PATH / "combined_legit.txt"  # may not exist
+
+    urls, labels = [], []
+
+    if not phishdb_file.exists():
+        logger.warning(f"Phish.Database not found at {phishdb_file}")
+        return [], []
+
+    # --- Load phishing URLs ---
+    skipped, loaded = 0, 0
+    with open(phishdb_file, "r", encoding="utf-8", errors="ignore") as fh:
+        for line in fh:
+            url = line.strip()
+            if not url:
+                continue
+
+            # Filter to http/https only
+            if valid_only and not url.lower().startswith(("http://", "https://")):
+                skipped += 1
+                continue
+
+            # Skip credential-stuffed URLs (have userinfo@) for cleaner training
+            if "@" in url:
+                skipped += 1
+                continue
+
+            # Skip very short or malformed URLs
+            if len(url) < 15:
+                skipped += 1
+                continue
+
+            urls.append(url)
+            labels.append(1)
+            loaded += 1
+
+            if max_samples and loaded >= max_samples:
+                break
+
+    logger.info(f"Phish.Database: loaded {loaded} phishing URLs, "
+                f"skipped {skipped} (of {skipped+loaded} total)")
+    return urls, labels
+
+
+def _load_legit_urls_for_phishdb(max_samples: int = 100_000
+                                  ) -> Tuple[List[str], List[int]]:
+    """
+    Collect legitimate URLs from all available sources.
+    Sources: combined_dataset.csv (label=0) + a sample of known-good domains.
+    Returns (urls, labels) where label=0 for all (legitimate).
+    """
+    urls, labels = [], []
+
+    # Source 1: UCI Phishing URL dataset label=0 rows (verified legitimate)
+    uci_csv = PROJECT_ROOT / "data" / "PhiUSIIL_Phishing_URL_Dataset.csv"
+    if uci_csv.exists():
+        df_uci = pd.read_csv(uci_csv)
+        # In PhiUSIIL: label=0 = legitimate, label=1 = phishing
+        legit_uci = df_uci[df_uci["label"] == 0].head(max_samples)
+        url_col = "URL" if "URL" in df_uci.columns else "url"
+        for _, row in legit_uci.iterrows():
+            urls.append(str(row[url_col]))
+            labels.append(0)
+        logger.info(f"  Legit from UCI (label=0): {len(urls)}")
+
+    # Source 3: Top legitimate Alexa/Tranco-ranked domains (hardcoded seeds)
+    top_sites = [
+        "https://www.google.com", "https://www.youtube.com", "https://www.facebook.com",
+        "https://www.wikipedia.org", "https://www.reddit.com", "https://www.amazon.com",
+        "https://www.twitter.com", "https://www.instagram.com", "https://www.linkedin.com",
+        "https://www.microsoft.com", "https://www.apple.com", "https://www.netflix.com",
+        "https://www.paypal.com", "https://www.github.com", "https://www.dropbox.com",
+        "https://www.salesforce.com", "https://www.wordpress.com", "https://www.bing.com",
+        "https://www.imdb.com", "https://www.stackoverflow.com",
+        "https://www.google.com/mail", "https://mail.google.com",
+        "https://www.amazon.com/dp/", "https://www.apple.com/shop",
+        "https://www.paypal.com/us/home", "https://www.linkedin.com/in/",
+    ]
+    for url in top_sites:
+        urls.append(url)
+        labels.append(0)
+
+    # Deduplicate
+    seen, unique_urls, unique_labels = set(), [], []
+    for u, l in zip(urls, labels):
+        if u not in seen:
+            seen.add(u)
+            unique_urls.append(u)
+            unique_labels.append(l)
+
+    logger.info(f"Total legitimate URLs (deduped): {len(unique_urls)}")
+    return unique_urls, unique_labels
+
+
+def _extract_phishdb_features(urls: List[str], extractor: URLFeatureExtractor
+                               ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    """
+    Extract 42-feature arrays from a list of URLs.
+    Also returns the labels (all 1 for phishing from Phish.DB).
+    """
+    X_list, failed = [], []
+    for url in urls:
+        try:
+            f = extractor.extract(url)
+            arr = f.to_feature_array()
+            arr = [0.0 if (v is None or (isinstance(v, float) and np.isnan(v))) else v
+                   for v in arr]
+            X_list.append(arr)
+        except Exception as e:
+            failed.append(url)
+    logger.info(f"  Extracted {len(X_list)}/{len(urls)} features "
+                f"({len(failed)} failed)")
+    return np.array(X_list, dtype=np.float32), failed
+
+
+def _map_combined_csv_to_42(csv_path: Path, extractor: URLFeatureExtractor
+                             ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Parse combined_dataset.csv (url, label) directly with URLFeatureExtractor.
+    Handles both legitimate (label=0) and phishing (label=1) rows.
+    """
+    df = pd.read_csv(csv_path)
+    phishing = df[df["label"].astype(str).str.lower().isin(["1", "phishing"])]
+    legit    = df[df["label"].astype(str).str.lower().isin(["0", "legit", "legitimate", "benign"])]
+
+    logger.info(f"Combined CSV: {len(df)} rows → legit={len(legit)}, phishing={len(phishing)}")
+
+    all_urls, all_labels = [], []
+    for _, row in legit.iterrows():
+        all_urls.append(str(row["url"])); all_labels.append(0)
+    for _, row in phishing.head(len(legit)).iterrows():  # balance classes
+        all_urls.append(str(row["url"])); all_labels.append(1)
+
+    logger.info(f"Balanced subset: {len(all_urls)} total ({sum(all_labels)} phishing)")
+
+    X_list = []
+    for url in all_urls:
+        try:
+            f = extractor.extract(url)
+            arr = f.to_feature_array()
+            arr = [0.0 if (v is None or (isinstance(v, float) and np.isnan(v))) else v
+                   for v in arr]
+            X_list.append(arr)
+        except Exception:
+            pass
+    y = np.array(all_labels[:len(X_list)], dtype=np.int_)
+    X = np.array(X_list, dtype=np.float32)
+    return X, y
+
+
+# ---------------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------------
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Train PhishGuard ensemble on unified 42-feature set")
     parser.add_argument("--optimize", action="store_true", help="Run GridSearchCV per model")
-    parser.add_argument("--models", default="phishguard,kaggle",
-                        help="Comma-separated models to train: phishguard,kaggle,uci  (default: phishguard,kaggle)")
+    parser.add_argument("--models", default="phishguard,kaggle,phishdb",
+                        help="Comma-separated models to train: phishguard,kaggle,uci,phishdb  "
+                             "(default: phishguard,kaggle,phishdb)")
+    parser.add_argument("--phishdb-samples", type=int, default=100_000,
+                        help="Max phishing samples to use from Phish.Database (default: 100000)")
     args = parser.parse_args()
     models_to_train = [m.strip() for m in args.models.split(',')]
 
@@ -476,22 +711,67 @@ def main():
 
     # 3. UCI dataset
     if "uci" in models_to_train:
-        logger.info("[3/3] Loading UCI ML repository dataset …")
-        try:
-            from ucimlrepo import fetch_ucirepo
-        except ImportError:
-            import subprocess
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "ucimlrepo"])
-            from ucimlrepo import fetch_ucirepo
-        dataset   = fetch_ucirepo(id=967)
-        df_uci    = dataset.data.features.copy()
-        y_uci_raw = dataset.data.targets.copy()
-        df_uci['label'] = y_uci_raw.values
-        # Drop string columns
-        df_uci = df_uci.select_dtypes(include=["int64", "float64", "int32", "float32", "bool"])
-        X_uci, y_uci = _map_uci_to_42(df_uci, extractor)
-        X_all["uci"] = X_uci
-        y_all["uci"] = y_uci
+        logger.info("[3/4] Loading UCI ML repository dataset from local CSV …")
+        uci_csv = PROJECT_ROOT / "data" / "PhiUSIIL_Phishing_URL_Dataset.csv"
+        if uci_csv.exists():
+            df_uci = pd.read_csv(uci_csv)
+
+            y_uci = df_uci['label'].values
+
+            # Drop string columns
+            df_uci = df_uci.select_dtypes(include=["int64", "float64", "int32", "float32", "bool"])
+            X_uci, y_uci = _map_uci_to_42(df_uci, extractor)
+            X_all["uci"] = X_uci
+            y_all["uci"] = y_uci
+        else:
+            logger.warning(f"UCI CSV not found at {uci_csv}. Please download it first.")
+
+    # 4. Phish.Database + legitimate URLs
+    if "phishdb" in models_to_train:
+        logger.info("[4/4] Loading Phish.Database + legitimate URLs …")
+        phish_urls, phish_labels = _load_phishdb_urls(
+            max_samples=args.phishdb_samples
+        )
+        legit_urls, legit_labels = _load_legit_urls_for_phishdb(
+            max_samples=min(args.phishdb_samples, 80_000)
+        )
+
+        if not phish_urls:
+            logger.warning("No Phish.Database URLs loaded — skipping phishdb model.")
+        else:
+            # Interleave: balanced training set
+            n_phish = len(phish_urls)
+            n_legit = min(len(legit_urls), n_phish)
+
+            phish_urls_s = phish_urls[:n_phish]
+            legit_urls_s = legit_urls[:n_legit]
+
+            all_phishdb_urls = phish_urls_s + legit_urls_s
+            all_phishdb_labels = [1] * n_phish + [0] * n_legit
+
+            # Shuffle
+            combined = list(zip(all_phishdb_urls, all_phishdb_labels))
+            random.seed(RANDOM_STATE)
+            random.shuffle(combined)
+            all_phishdb_urls, all_phishdb_labels = zip(*combined)
+            all_phishdb_urls, all_phishdb_labels = list(all_phishdb_urls), list(all_phishdb_labels)
+
+            logger.info(f"PhishDB dataset: {len(all_phishdb_urls)} total "
+                        f"({sum(all_phishdb_labels)} phishing, {len(all_phishdb_urls)-sum(all_phishdb_labels)} legit)")
+
+            X_list = []
+            for i, url in enumerate(all_phishdb_urls):
+                try:
+                    f = extractor.extract(url)
+                    arr = f.to_feature_array()
+                    arr = [0.0 if (v is None or (isinstance(v, float) and np.isnan(v))) else v
+                           for v in arr]
+                    X_list.append(arr)
+                except Exception:
+                    all_phishdb_labels.pop(i)
+            X_all["phishdb"] = np.array(X_list, dtype=np.float32)
+            y_all["phishdb"] = np.array(all_phishdb_labels[:len(X_list)], dtype=np.int_)
+            logger.info(f"PhishDB 42-feature matrix: {X_all['phishdb'].shape}")
 
     # ── Train each model ──────────────────────────────────────────────────
     trained_models = {}

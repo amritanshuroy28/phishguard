@@ -70,6 +70,10 @@ class AnalyzeRequest(BaseModel):
         default=True,
         description="Query external threat intelligence sources"
     )
+    fast_mode: bool = Field(
+        default=False,
+        description="Skip DNS/WHOIS lookups for sub-500ms response (browser extension mode)"
+    )
 
     @field_validator('url')
     @classmethod
@@ -94,6 +98,10 @@ class BatchAnalyzeRequest(BaseModel):
     enable_cti: bool = Field(
         default=True,
         description="Query external threat intelligence sources"
+    )
+    fast_mode: bool = Field(
+        default=False,
+        description="Skip DNS/WHOIS lookups for sub-500ms response"
     )
 
 

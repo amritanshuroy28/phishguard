@@ -1,14 +1,9 @@
 """
-Ensemble ML Service
-====================
-Loads 3 PhishGuard models and averages their predict_proba() at inference time.
+PhishGuard Ultimate ML Service
+==============================
+Single best XGBoost model trained on Phish.Database + PhiUSIIL legit URLs.
 
-Models expected in: models/ensemble/{name}_model.pkl
-Each pickle format: {"model": XGBClassifier, "best_params": {...},
-                    "metrics": {...}, "history": {...}, "feature_names": [...]}
-
-The ensemble runs 3 XGBoost predict_proba() calls (~1ms total) and averages
-the probability outputs.  Target: <5ms inference overhead.
+Inference latency: ~1-2 ms per request.
 """
 
 import pickle
@@ -24,14 +19,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-_MODELS_DIR = Path(__file__).parent.parent.parent / "models" / "ensemble"
-MODEL_CONFIGS = {
-    "phishguard": _MODELS_DIR / "phishguard_model.pkl",
-    "uci":        _MODELS_DIR / "uci_model.pkl",
-    "kaggle":     _MODELS_DIR / "kaggle_model.pkl",
-}
+_MODELS_DIR = Path(__file__).parent.parent.parent / "models"
+ULTIMATE_MODEL_PKL = _MODELS_DIR / "phishguard_ultimate.pkl"
 
-# 42 unified feature names (matching train_ensemble.py)
+# 42 unified feature names (matching train_ultimate.py)
 UNIFIED_FEATURES = [
     'url_length', 'path_length', 'query_length', 'fragment_length',
     'subdomain_count', 'subdomain_length', 'path_depth', 'url_entropy',
@@ -49,97 +40,74 @@ UNIFIED_FEATURES = [
 ]
 
 
-class EnsembleModelPackage:
-    """Holds a loaded model and its metadata."""
-    __slots__ = ("name", "model", "metrics", "cv_scores", "best_params", "loaded")
-
-    def __init__(self, name: str):
-        self.name = name
-        self.model: Any = None
-        self.metrics: Dict = {}
-        self.cv_scores: List[float] = []
-        self.best_params: Dict = {}
-        self.loaded: bool = False
-
-
-class EnsembleMLService:
+class UltimateMLService:
     """
-    Ensemble inference service — loads all 3 models at startup and averages
-    their probability outputs at predict() time.
+    PhishGuard Ultimate — single best XGBoost model.
+    Trained on Phish.Database + PhiUSIIL + verified trusted domains.
 
-    Timing budget:
-        - 3 × model.predict_proba():  ~1–2 ms
-        - Ensemble averaging:         ~0.1 ms
-        - Total inference overhead:    ~2–3 ms  (well within sub-500ms budget)
+    Target: >95% test accuracy (achieved 99.83% in training).
+    Inference: ~1-2ms per request.
     """
 
     def __init__(self):
-        self.models: Dict[str, EnsembleModelPackage] = {}
+        self.model: Any = None
+        self.metrics: Dict = {}
+        self.cv_accuracy: float = 0.0
+        self.cv_f1: float = 0.0
+        self.training_data: Dict = {}
+        self.trained_at: str = ""
         self._feature_names = UNIFIED_FEATURES
-        self._n_features = len(UNIFIED_FEATURES)  # 42
-        self._load_all()
+        self._n_features = len(UNIFIED_FEATURES)
+        self._loaded = False
+        self._load()
 
-    # ------------------------------------------------------------------
-    # Loading
-    # ------------------------------------------------------------------
-    def _load_all(self) -> None:
-        """Load all available ensemble models from disk."""
-        for name, path in MODEL_CONFIGS.items():
-            pkg = EnsembleModelPackage(name)
-            if path.exists():
-                try:
-                    with open(path, "rb") as f:
-                        data = pickle.load(f)
-                    pkg.model       = data.get("model")
-                    pkg.metrics     = data.get("metrics", {})
-                    pkg.cv_scores   = (data.get("history") or {}).get("cv_scores", [])
-                    pkg.best_params = data.get("best_params", {})
-                    pkg.loaded      = True
-                    logger.info(f"[ensemble] Loaded {name} from {path}  "
-                                f"acc={pkg.metrics.get('accuracy', '?')}")
-                except Exception as e:
-                    logger.warning(f"[ensemble] Failed to load {name}: {e}")
-            else:
-                logger.warning(f"[ensemble] Model not found: {path}")
-            self.models[name] = pkg
+    def _load(self) -> None:
+        if not ULTIMATE_MODEL_PKL.exists():
+            logger.error(f"[ultimate] Model file not found: {ULTIMATE_MODEL_PKL}")
+            return
 
-        loaded = [n for n, p in self.models.items() if p.loaded]
-        logger.info(f"[ensemble] {len(loaded)}/{len(self.models)} models ready: {loaded}")
+        try:
+            with open(ULTIMATE_MODEL_PKL, "rb") as f:
+                pkg = pickle.load(f)
+            self.model         = pkg["model"]
+            self.metrics       = pkg.get("metrics", {})
+            self.cv_accuracy   = pkg.get("cv_accuracy", 0.0)
+            self.cv_f1         = pkg.get("cv_f1", 0.0)
+            self.training_data = pkg.get("training_data", {})
+            self.trained_at    = pkg.get("trained_at", "unknown")
+            self._loaded       = True
+            logger.info(f"[ultimate] Loaded model from {ULTIMATE_MODEL_PKL}")
+            logger.info(f"[ultimate] Test accuracy: {self.metrics.get('accuracy', '?')}")
+            logger.info(f"[ultimate] CV accuracy:   {self.cv_accuracy}")
+            logger.info(f"[ultimate] Training data:  {self.training_data}")
+        except Exception as e:
+            logger.error(f"[ultimate] Failed to load model: {e}", exc_info=True)
 
-    # ------------------------------------------------------------------
-    # Prediction
-    # ------------------------------------------------------------------
+    @property
+    def loaded(self) -> bool:
+        return self._loaded and self.model is not None
+
     def predict(self, feature_array: Any) -> Tuple[bool, float]:
-        """
-        Run ensemble inference on a 42-feature array.
+        """Run inference on a 42-feature array."""
+        if not self.loaded:
+            return False, 0.5
 
-        Args:
-            feature_array:  List or array of 42 floats
-                           (from URLFeatures.to_feature_array())
-
-        Returns:
-            Tuple of (is_phishing: bool, confidence: float in [0, 1])
-                    confidence = avg prob (use directly for phishing prob)
-        """
-        # Convert to numpy
         if not isinstance(feature_array, np.ndarray):
             arr = np.array(feature_array, dtype=np.float32)
         else:
             arr = feature_array.astype(np.float32)
 
-        # Handle 1D → 2D
         if arr.ndim == 1:
             arr = arr.reshape(1, -1)
         else:
             arr = arr.reshape(arr.shape[0], -1)
 
-        # Sanitise NaN/Inf
         arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
 
         if arr.shape[1] != self._n_features:
             logger.warning(
-                f"[ensemble] Feature count mismatch: got {arr.shape[1]}, "
-                f"expected {self._n_features}. Padding/truncating."
+                f"[ultimate] Feature count mismatch: got {arr.shape[1]}, "
+                f"expected {self._n_features}. Adjusting."
             )
             if arr.shape[1] < self._n_features:
                 arr = np.pad(arr, ((0, 0), (0, self._n_features - arr.shape[1])),
@@ -147,116 +115,70 @@ class EnsembleMLService:
             else:
                 arr = arr[:, :self._n_features]
 
-        # Collect per-model probabilities
-        probs: List[float] = []
-        fallback_pkg: Optional[EnsembleModelPackage] = None
-
-        for name, pkg in self.models.items():
-            if not pkg.loaded:
-                continue
-            try:
-                prob = float(pkg.model.predict_proba(arr)[0][1])
-                probs.append(prob)
-            except Exception as e:
-                logger.warning(f"[ensemble] {name} predict_proba error: {e}")
-
-        # ── Rule-based fallback (when no models loaded) ─────────────────
-        if not probs:
-            logger.warning("[ensemble] No models loaded — using rule-based fallback")
-            return self._rule_based_predict(arr[0])
-
-        avg_prob = mean(probs)
-        is_phishing = avg_prob >= 0.5
-        # Confidence: for phishing, avg_prob is the phishing probability;
-        # for legit, 1 - avg_prob is the "confidence it's legit"
-        confidence = float(avg_prob) if is_phishing else float(1 - avg_prob)
-
-        return is_phishing, confidence
+        try:
+            phishing_prob = float(self.model.predict_proba(arr)[0][1])
+            is_phishing = phishing_prob >= 0.5
+            confidence = phishing_prob if is_phishing else (1.0 - phishing_prob)
+            return is_phishing, confidence
+        except Exception as e:
+            logger.error(f"[ultimate] predict error: {e}", exc_info=True)
+            return False, 0.5
 
     def predict_proba_only(self, feature_array: Any) -> Dict[str, float]:
-        """
-        Return per-model probabilities (useful for debugging / transparency).
+        """Return raw phishing probability (single model)."""
+        if not self.loaded:
+            return {}
 
-        Returns:
-            {"model_name": phishing_probability, ...}
-        """
         if not isinstance(feature_array, np.ndarray):
             arr = np.array(feature_array, dtype=np.float32).reshape(1, -1)
         else:
             arr = feature_array.astype(np.float32).reshape(1, -1)
         arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
 
-        result = {}
-        for name, pkg in self.models.items():
-            if not pkg.loaded:
-                continue
-            try:
-                result[name] = float(pkg.model.predict_proba(arr)[0][1])
-            except Exception:
-                result[name] = 0.5
-        return result
-
-    # ------------------------------------------------------------------
-    # Rule-based fallback
-    # ------------------------------------------------------------------
-    def _rule_based_predict(self, features: np.ndarray) -> Tuple[bool, float]:
-        """
-        Heuristic fallback when no ensemble models are available.
-        Uses the same logic as MLService._rule_based_predict for consistency.
-        """
         try:
-            max_idx = min(len(features), self._n_features) - 1
-            obfuscation = float(features[min(15, max_idx)])   # obfuscation_score
-            suspicious  = float(features[min(21, max_idx)])   # suspicious_pattern_score
-
-            typosquatting = 0.0
-            if self._n_features > 32 and len(features) > 32:
-                typosquatting = float(features[32])            # typosquatting_score
-
-            risk = (obfuscation * 0.3 + suspicious * 0.4 + typosquatting * 0.3)
-            confidence = min(risk / 5.0, 1.0)
-            is_phishing = risk > 1.5
-            return is_phishing, confidence
+            prob = float(self.model.predict_proba(arr)[0][1])
+            return {"ultimate": prob}
         except Exception:
-            return False, 0.5
+            return {"ultimate": 0.5}
 
-    # ------------------------------------------------------------------
-    # Info
-    # ------------------------------------------------------------------
     def get_info(self) -> Dict[str, Any]:
-        """Return ensemble status and per-model info."""
+        """Return model status and metadata."""
         return {
-            "n_features"     : self._n_features,
-            "feature_names"  : self._feature_names,
-            "models"         : {
-                name: {
-                    "loaded"      : pkg.loaded,
-                    "accuracy"    : pkg.metrics.get("accuracy"),
-                    "f1_score"    : pkg.metrics.get("f1_score"),
-                    "roc_auc"     : pkg.metrics.get("roc_auc"),
-                    "cv_scores"   : pkg.cv_scores,
-                    "best_params" : {k: str(v) for k, v in pkg.best_params.items()},
-                }
-                for name, pkg in self.models.items()
-            },
+            "model_name"   : "phishguard_ultimate",
+            "model_version": "ultimate-v1.0",
+            "loaded"       : self._loaded,
+            "n_features"   : self._n_features,
+            "feature_names": self._feature_names,
+            "metrics"      : self.metrics,
+            "cv_accuracy"  : self.cv_accuracy,
+            "cv_f1"        : self.cv_f1,
+            "training_data": self.training_data,
+            "trained_at"   : self.trained_at,
         }
 
 
 # ---------------------------------------------------------------------------
 # Global singleton
 # ---------------------------------------------------------------------------
-_ensemble_service: Optional[EnsembleMLService] = None
+_ultimate_service: Optional[UltimateMLService] = None
 
 
-def get_ensemble_service() -> EnsembleMLService:
-    global _ensemble_service
-    if _ensemble_service is None:
-        _ensemble_service = EnsembleMLService()
-    return _ensemble_service
+def get_ultimate_service() -> UltimateMLService:
+    """Get or create the global UltimateMLService instance."""
+    global _ultimate_service
+    if _ultimate_service is None:
+        _ultimate_service = UltimateMLService()
+    return _ultimate_service
 
 
-def reload_ensemble() -> bool:
-    """Hot-reload the ensemble (e.g., after retraining)."""
-    global _ensemble_service
-    _ensemble_service = EnsembleMLService()
-    return len([p for p in _ensemble_service.models.values() if p.loaded]) > 0
+# Backwards-compat alias
+def get_ensemble_service():
+    """Backwards-compat alias — returns the single ultimate model service."""
+    return get_ultimate_service()
+
+
+def reload_ultimate() -> bool:
+    """Hot-reload the ultimate model (e.g., after retraining)."""
+    global _ultimate_service
+    _ultimate_service = UltimateMLService()
+    return _ultimate_service.loaded

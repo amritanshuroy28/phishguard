@@ -29,6 +29,8 @@ phishguard_venv/
 *.swp
 *.swo
 *~
+*:Zone.Identifier
+.ZoneIdentifier
 .pytest_cache/
 .coverage
 htmlcov/

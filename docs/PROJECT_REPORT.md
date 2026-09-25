@@ -10,8 +10,8 @@ PhishGuard is an enterprise-grade phishing URL detection system that combines Ma
 
 **Key Achievements:**
 - Real-time URL analysis with < 500ms response time target
-- 35+ engineered features for comprehensive URL characterization
-- Integration with VirusTotal and URLhaus CTI feeds
+- 42 engineered features for comprehensive URL characterization
+- Optional URLhaus CTI lookup
 - Typosquatting and obfuscation detection
 - Structured JSON report generation with IoC export
 
@@ -183,9 +183,9 @@ HYPERPARAMETERS = {
 
 ## 5. Threat Intelligence Integration
 
-### 5.1 VirusTotal Integration
+### 5.1 URLhaus Integration
 
-**API Endpoint:** `https://www.virustotal.com/api/v3/urls/{url_id}`
+**API Endpoint:** `https://urlhaus.abuse.ch/api/`
 
 **Response Processing:**
 - Extract `last_analysis_stats` for detection counts
@@ -196,7 +196,7 @@ HYPERPARAMETERS = {
 - Free tier: 500 requests/day, 4/minute
 - Tracked in `_vt_requests_today` counter
 
-### 5.2 URLhaus Integration
+### 5.2 URLhaus Response Handling
 
 **API Endpoint:** `https://urlhaus.abuse.ch/api/endpoint.php`
 
@@ -320,7 +320,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 ```python
 # Concurrent CTI lookups
 async def lookup_all(url: str):
-    tasks = [lookup_virustotal(url), lookup_urlhaus(url)]
+    tasks = [lookup_urlhaus(url)]
     results = await asyncio.gather(*tasks)
 ```
 
@@ -371,7 +371,6 @@ gunicorn main:app \
 
 ```bash
 # .env file
-VIRUSTOTAL_API_KEY=your-key-here
 DEBUG=false
 HOST=0.0.0.0
 PORT=8000
@@ -403,7 +402,7 @@ PORT=8000
 ## 13. Conclusion
 
 PhishGuard provides a comprehensive solution for phishing URL detection by combining:
-- **35+ engineered features** for robust URL characterization
+- **42 engineered features** for robust URL characterization
 - **XGBoost ML classifier** for accurate classification
 - **Live CTI integration** for real-time threat intelligence
 - **Real-time browser protection** via Chrome extension

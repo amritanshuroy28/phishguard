@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Shield, LayoutDashboard, Search, History, AlertTriangle, Settings, Menu, X } from 'lucide-react'
+import { Shield, LayoutDashboard, Search, History, AlertTriangle, Menu, X } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },

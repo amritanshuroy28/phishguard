@@ -1,0 +1,22 @@
+{
+  "name": "frozen-phishguard-external-benchmark-2026-09-06",
+  "description": "Independent URL benchmark used only for final model assessment. Training removes exact canonical URL overlaps before fitting.",
+  "sources": [
+    {
+      "name": "Phishing.Database active links",
+      "label": "phishing",
+      "format": "line_url",
+      "url": "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/81e4c4db830766896c59c82f4488573ee0810626/phishing-links-ACTIVE.txt",
+      "sha256": "be4a179b3ac92b7135595b459c2c9867fe681c12209489dd99517db8407a67c6",
+      "license": "See the upstream Phishing.Database repository."
+    },
+    {
+      "name": "Tranco list 74V6X",
+      "label": "legitimate",
+      "format": "ranked_domain",
+      "url": "https://tranco-list.eu/download/74V6X/1000000",
+      "sha256": "f759ed99b859b05f098ec5e281bd4a993e6223fd79920af92febb3c9709eef28",
+      "license": "Tranco source-provider terms apply; see https://tranco-list.eu/."
+    }
+  ]
+}

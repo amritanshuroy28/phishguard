@@ -20,6 +20,7 @@ from dataclasses import asdict
 from typing import List, Optional
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -32,7 +33,7 @@ import asyncio
 from backend.schemas.schemas import (
     AnalyzeRequest, BatchAnalyzeRequest,
     AnalysisResult, BatchAnalysisResult,
-    RiskLevel, ThreatCategory, ThreatDetail,
+    AnalysisDecision, RiskLevel, ThreatCategory, ThreatDetail,
     CTIResult, URLFeatures,
     HealthStatus, ModelInfo,
     ScanRecord, IoCRecord
@@ -82,7 +83,7 @@ def calculate_risk_score(
 
     Combines:
     - ML model confidence
-    - CTI hits (VirusTotal, URLhaus)
+    - URLhaus CTI hits
     - Feature-based heuristics
     - Threat details
 
@@ -301,11 +302,19 @@ async def analyze_url_internal(
         features_obj = feature_extractor.extract_with_dns(url, whois_result=whois_data, dns_result=dns_data)
         features = features_to_schema(features_obj)
 
-        # 3. ML inference (single ultimate XGBoost model, ~1-2ms)
-        logger.info(f"[{analysis_id}] Running ultimate ML inference (42 features)...")
-        is_ml_phishing, ml_confidence = ensemble_service.predict(features_obj.to_feature_array())
+        # 3. Certified ML inference. The service rejects a missing or malformed
+        # bundle rather than silently applying a different feature schema or a
+        # default 0.5 decision threshold.
+        logger.info(f"[{analysis_id}] Running certified ML inference (42 features)...")
+        is_ml_phishing, ml_phishing_probability = ensemble_service.predict(features_obj.to_feature_array())
+        model_info = ensemble_service.get_info()
+        decision_policy = model_info.get("decision_policy", {})
+        ml_decision_threshold = float(decision_policy["phishing_probability_threshold"])
+        ml_confidence = (
+            ml_phishing_probability if is_ml_phishing else 1.0 - ml_phishing_probability
+        )
 
-        # 5. CTI lookups (asynchronous, concurrent)
+        # 4. CTI lookups (asynchronous, concurrent)
         cti_results: List[CTIResult] = []
         if enable_cti:
             logger.info(f"[{analysis_id}] Querying CTI sources...")
@@ -333,12 +342,58 @@ async def analyze_url_internal(
             ml_confidence, is_ml_phishing, cti_results, features, threats
         )
 
-        # Determine final malicious flag
-        is_malicious = (
-            is_ml_phishing and ml_confidence > 0.7 or
-            any(cti.malicious for cti in cti_results) or
-            risk_level in [RiskLevel.CRITICAL, RiskLevel.HIGH]
-        )
+        # The final verdict can only be phishing when evidence crosses the
+        # certified ML threshold or a CTI provider confirms a malicious URL.
+        # Heuristics remain useful context, but no longer turn a genuine URL
+        # into a phishing alert by themselves.
+        cti_confirmed = any(cti.malicious for cti in cti_results)
+
+        # Whitelist check for known legitimate domains to reduce false positives
+        # Extract domain from URL (simplified - in production use proper URL parsing)
+        try:
+            from urllib.parse import urlparse
+            parsed_url = urlparse(url)
+            domain = parsed_url.netloc.lower()
+            # Remove www. prefix if present
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            logger.info(f"[{analysis_id}] Extracted domain: {domain}")
+        except Exception as e:
+            logger.warning(f"[{analysis_id}] Failed to extract domain from {url}: {e}")
+            domain = ""
+
+        # Known legitimate domains that should not be flagged as phishing
+        LEGITIMATE_DOMAINS = {
+            'linkedin.com', 'youtube.com', 'google.com', 'facebook.com',
+            'twitter.com', 'instagram.com', 'github.com', 'stackoverflow.com',
+            'microsoft.com', 'apple.com', 'amazon.com', 'netflix.com',
+            'paypal.com', 'ebay.com', 'wikipedia.org', 'reddit.com',
+            'dropbox.com', 'yahoo.com', 'bing.com', 'medium.com'
+        }
+
+        is_whitelisted = domain in LEGITIMATE_DOMAINS
+        logger.info(f"[{analysis_id}] Domain '{domain}' whitelisted: {is_whitelisted}")
+
+        # Apply whitelist logic: if domain is whitelisted and ML says phishing,
+        # require either CTI confirmation OR high heuristic risk score (>= 80)
+        # to maintain the phishing prediction
+        if is_whitelisted and is_ml_phishing and not cti_confirmed and risk_score < 80.0:
+            # Override ML prediction for whitelisted domains unless we have strong confirmation
+            decision = AnalysisDecision.LEGITIMATE
+            decision_reason = "whitelisted_legitimate_domain"
+        elif cti_confirmed:
+            decision = AnalysisDecision.PHISHING
+            decision_reason = "confirmed_by_threat_intelligence"
+        elif is_ml_phishing:
+            decision = AnalysisDecision.PHISHING
+            decision_reason = "calibrated_model_threshold"
+        elif risk_level in [RiskLevel.CRITICAL, RiskLevel.HIGH]:
+            decision = AnalysisDecision.REVIEW
+            decision_reason = "heuristics_require_review"
+        else:
+            decision = AnalysisDecision.LEGITIMATE
+            decision_reason = "below_certified_model_threshold"
+        is_malicious = decision == AnalysisDecision.PHISHING
 
         # 7. Build response
         processing_time = (time.time() - start_time) * 1000
@@ -350,9 +405,13 @@ async def analyze_url_internal(
             risk_level=risk_level,
             risk_score=round(risk_score, 2),
             is_malicious=is_malicious,
+            decision=decision,
+            decision_reason=decision_reason,
             ml_prediction=is_ml_phishing,
+            ml_phishing_probability=round(ml_phishing_probability, 4),
+            ml_decision_threshold=round(ml_decision_threshold, 4),
             ml_confidence=round(ml_confidence, 4),
-            ml_model_version="ultimate-v1.0",
+            ml_model_version=model_info["model_version"],
             ctis=cti_results,
             threats=threats,
             features=features if include_raw_features else None,
@@ -383,9 +442,13 @@ async def analyze_url_internal(
             risk_level=RiskLevel.LOW,
             risk_score=0.0,
             is_malicious=False,
+            decision=AnalysisDecision.REVIEW,
+            decision_reason="analysis_failed",
             ml_prediction=False,
+            ml_phishing_probability=0.0,
+            ml_decision_threshold=0.0,
             ml_confidence=0.0,
-            ml_model_version="ultimate-v1.0",
+            ml_model_version="unavailable",
             ctis=[],
             threats=[],
             features=features if include_raw_features and features_obj else None,
@@ -406,7 +469,7 @@ async def analyze_url(request: AnalyzeRequest):
     This endpoint orchestrates:
     1. Feature extraction (lexical, structural)
     2. ML model inference (XGBoost)
-    3. Live CTI lookups (VirusTotal, URLhaus)
+    3. Optional live URLhaus lookup
 
     Response time target: <500ms
     """
@@ -507,13 +570,19 @@ async def model_info():
     info = ensemble_service.get_info()
     metrics = info.get("metrics", {})
 
+    policy = info.get("decision_policy", {})
+    certification = info.get("certification", {})
     return ModelInfo(
-        version=info["model_version"] if info["loaded"] else "no model loaded",
+        version=info["model_version"] if info["loaded"] else "no certified model loaded",
         feature_count=info["n_features"],
         training_date=info.get("trained_at", "unknown"),
         accuracy=metrics.get("accuracy", 0.0),
         f1_score=metrics.get("f1_score", 0.0),
-        auc_score=metrics.get("roc_auc", 0.0)
+        auc_score=metrics.get("roc_auc", 0.0),
+        balanced_accuracy=metrics.get("balanced_accuracy"),
+        legitimate_false_positive_rate=metrics.get("legitimate_false_positive_rate"),
+        phishing_probability_threshold=policy.get("phishing_probability_threshold"),
+        certified=certification.get("certified", False),
     )
 
 
@@ -603,7 +672,7 @@ async def get_iocs(
 
 @router.get("/iocs/export")
 async def export_iocs(
-    format: str = Query(default="json", regex="^(json|csv)$"),
+    format: str = Query(default="json", pattern="^(json|csv)$"),
     min_risk_score: float = Query(default=50.0, ge=0, le=100)
 ):
     """

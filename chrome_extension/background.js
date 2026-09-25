@@ -24,7 +24,6 @@
 
 const CONFIG = {
     API_BASE_URL: 'http://localhost:8000/api/v1',
-    // Fallback to online API if backend not locally available
     API_ENDPOINTS: {
         analyze: '/analyze',
         health: '/health'
@@ -165,10 +164,12 @@ async function analyzeUrl(url) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
+    body: JSON.stringify({
                 url: url,
                 include_raw_features: false,
-                enable_cti: true
+                enable_cti: true,
+                // Browser navigation checks should not wait for DNS/WHOIS.
+                fast_mode: true
             })
         });
 
@@ -241,13 +242,14 @@ function getRiskLabel(riskLevel, threatScore) {
  * Update extension badge based on threat level
  */
 function updateBadge(tabId, result) {
-    const riskLevel = getRiskLevel(result.risk_score);
+    const decision = result.decision || (result.is_malicious ? 'phishing' : 'legitimate');
+    const riskLevel = decision === 'phishing' ? 'high' : decision === 'review' ? 'medium' : 'safe';
     const color = CONFIG.BADGE_COLORS[riskLevel];
-    const label = getRiskLabel(riskLevel, result.risk_score);
+    const label = decision === 'phishing' ? 'Phishing' : decision === 'review' ? 'Review' : 'Legitimate';
 
-    // Set badge text
+    // The badge follows the certified final verdict, not an advisory heuristic score.
     chrome.action.setBadgeText({
-        text: label === 'Safe' ? '✓' : result.risk_score.toFixed(0),
+        text: decision === 'legitimate' ? '✓' : decision === 'review' ? '!' : result.risk_score.toFixed(0),
         tabId: tabId
     });
 
@@ -274,14 +276,7 @@ function updateBadge(tabId, result) {
  * Show notification for high-risk URLs
  */
 function showThreatNotification(tabId, result) {
-    if (!CONFIG.NOTIFICATION_ENABLED) return;
-
-    const riskLevel = getRiskLevel(result.risk_score);
-    if (riskLevel !== 'high' && riskLevel !== 'critical') return;
-
-    // Only notify for new threats
-    const cached = state.getAnalysis(result.url);
-    if (cached && cached.risk_score === result.risk_score) return;
+    if (!CONFIG.NOTIFICATION_ENABLED || result.decision !== 'phishing') return;
 
     chrome.notifications.create({
         type: 'basic',
@@ -289,7 +284,7 @@ function showThreatNotification(tabId, result) {
         title: '⚠️ PhishGuard Alert',
         message: `Suspicious URL detected!\n\nThreat Score: ${result.risk_score}/100\nThreats: ${result.threats.length}`,
         priority: 2,
-        requireInteraction: riskLevel === 'critical'
+        requireInteraction: true
     });
 }
 
@@ -316,10 +311,11 @@ async function handleTabUpdate(tabId, changeInfo) {
 
         // Analyze the URL
         try {
+            const wasCached = Boolean(state.getAnalysis(url));
             const result = await analyzeUrl(url);
             updateBadge(tabId, result);
 
-            if (result.is_malicious) {
+            if (result.is_malicious && !wasCached) {
                 showThreatNotification(tabId, result);
             }
 
@@ -441,9 +437,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     // Initialize state from storage
     await state.loadFromStorage();
 
-    // Check API health periodically
+    // Alarms survive service-worker suspension; setInterval does not.
+    chrome.alarms.create('health-check', { periodInMinutes: 5 });
     checkApiHealth();
-    setInterval(checkApiHealth, 5 * 60 * 1000);  // Every 5 minutes
 
     // Analyze current active tab if available
     try {
@@ -468,6 +464,7 @@ chrome.runtime.onStartup.addListener(async () => {
 
     // Check API health
     await checkApiHealth();
+    chrome.alarms.create('health-check', { periodInMinutes: 5 });
 
     // Analyze current active tab
     try {
@@ -480,6 +477,12 @@ chrome.runtime.onStartup.addListener(async () => {
         }
     } catch (error) {
         console.error('PhishGuard: Failed to analyze active tab on startup', error);
+    }
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'health-check') {
+        checkApiHealth();
     }
 });
 

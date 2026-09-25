@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Download, Filter, Trash2 } from 'lucide-react'
+import { Download, Trash2 } from 'lucide-react'
 import { getHistory, clearHistory, exportIoCs } from '../utils/api'
 import { formatRelativeTime, downloadFile } from '../utils/helpers'
 import { RiskBadge, Spinner, EmptyState } from '../components/SharedComponents'

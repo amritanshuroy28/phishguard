@@ -8,9 +8,9 @@ PhishGuard is a comprehensive phishing detection system that combines statistica
 
 ### Key Features
 
-- **ML-Based Detection**: XGBoost classifier trained on 35+ URL features
+- **ML-Based Detection**: XGBoost classifier trained on 42 URL features
 - **Real-Time Protection**: Chrome extension with live URL monitoring
-- **Threat Intelligence**: VirusTotal & URLhaus integration
+- **Threat Intelligence**: Optional URLhaus integration
 - **Forensics**: DNS/WHOIS lookups, typosquatting detection
 - **Analyst Dashboard**: React-based UI with visualizations and IoC export
 
@@ -69,7 +69,7 @@ cd backend
 pip install -r requirements.txt
 
 # Set environment variables (optional)
-export VIRUSTOTAL_API_KEY="your-api-key"
+export DNS_WHOIS_TIMEOUT=6
 
 # Start server
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -169,8 +169,8 @@ curl -O http://localhost:8000/api/v1/iocs/export?format=csv
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VIRUSTOTAL_API_KEY` | - | VirusTotal API key for threat intelligence |
-| `VIRUSTOTAL_API_URL` | https://www.virustotal.com | VirusTotal API endpoint |
+| `DNS_WHOIS_TIMEOUT` | `6.0` | Per-lookup DNS/WHOIS timeout in seconds |
+| `DNS_TIMEOUT` | `2.0` | DNS timeout in seconds |
 | `DEBUG` | false | Enable debug logging |
 | `HOST` | 0.0.0.0 | Server bind host |
 | `PORT` | 8000 | Server port |

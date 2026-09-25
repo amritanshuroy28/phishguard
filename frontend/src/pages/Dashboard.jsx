@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Shield, AlertTriangle, CheckCircle, Clock, Trash2, ExternalLink } from 'lucide-react'
+import { Shield, AlertTriangle, CheckCircle, Clock, Trash2 } from 'lucide-react'
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip,
@@ -12,7 +12,7 @@ import { Link } from 'react-router-dom'
 export default function Dashboard() {
   const queryClient = useQueryClient()
 
-  const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useQuery({
+  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['stats'],
     queryFn: getStats,
     refetchInterval: 30000,

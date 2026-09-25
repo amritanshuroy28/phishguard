@@ -23,6 +23,13 @@ class RiskLevel(str, Enum):
     CRITICAL = "critical"
 
 
+class AnalysisDecision(str, Enum):
+    """Final user-facing URL decision."""
+    LEGITIMATE = "legitimate"
+    PHISHING = "phishing"
+    REVIEW = "review"
+
+
 class ThreatCategory(str, Enum):
     """Categories of threats detected."""
     PHISHING = "phishing"
@@ -37,7 +44,6 @@ class ThreatCategory(str, Enum):
 
 class CTISource(str, Enum):
     """Cyber Threat Intelligence sources."""
-    VIRUSTOTAL = "virustotal"
     URLHAUS = "urlhaus"
     OWN_MODEL = "own_model"
 
@@ -53,7 +59,7 @@ class AnalyzeRequest(BaseModel):
     Attributes:
         url: The URL to analyze
         include_raw_features: Whether to include extracted features in response
-        enable_cti: Whether to query external CTI sources (VirusTotal, URLhaus)
+        enable_cti: Whether to query URLhaus threat intelligence
     """
     url: str = Field(
         ...,
@@ -68,7 +74,7 @@ class AnalyzeRequest(BaseModel):
     )
     enable_cti: bool = Field(
         default=True,
-        description="Query external threat intelligence sources"
+        description="Query URLhaus threat intelligence"
     )
     fast_mode: bool = Field(
         default=False,
@@ -97,7 +103,7 @@ class BatchAnalyzeRequest(BaseModel):
     )
     enable_cti: bool = Field(
         default=True,
-        description="Query external threat intelligence sources"
+        description="Query URLhaus threat intelligence"
     )
     fast_mode: bool = Field(
         default=False,
@@ -117,8 +123,8 @@ class CTIResult(BaseModel):
         source: Name of the CTI source
         found: Whether the URL was found in the source
         malicious: Whether the source marks it as malicious
-        positives: Number of vendors detecting as malicious (VirusTotal)
-        total: Total number of vendors (VirusTotal)
+        positives: Number of positive detections reported by the source
+        total: Number of source detections considered
         detection_rate: Percentage of detections
         metadata: Additional source-specific data
         error: Error message if lookup failed
@@ -225,7 +231,11 @@ class AnalysisResult(BaseModel):
     risk_level: RiskLevel
     risk_score: float = Field(ge=0.0, le=100.0)
     is_malicious: bool
+    decision: AnalysisDecision
+    decision_reason: str
     ml_prediction: bool  # True = phishing, False = legitimate
+    ml_phishing_probability: float = Field(ge=0.0, le=1.0)
+    ml_decision_threshold: float = Field(ge=0.0, le=1.0)
     ml_confidence: float = Field(ge=0.0, le=1.0)
     ml_model_version: str
     ctis: List[CTIResult] = Field(default_factory=list)
@@ -291,13 +301,17 @@ class HealthStatus(BaseModel):
 
 
 class ModelInfo(BaseModel):
-    """Information about the loaded ML model."""
+    """Information and certified operating point for the loaded model."""
     version: str
     feature_count: int
     training_date: str
     accuracy: float
-    f1_score: float
-    auc_score: float
+    f1_score: float = 0.0
+    auc_score: float = 0.0
+    balanced_accuracy: Optional[float] = None
+    legitimate_false_positive_rate: Optional[float] = None
+    phishing_probability_threshold: Optional[float] = None
+    certified: bool = False
 
 
 # ============================================================================
@@ -317,8 +331,6 @@ class ErrorResponse(BaseModel):
 
 class CTIConfig(BaseModel):
     """Configuration for CTI sources."""
-    virustotal_enabled: bool = True
-    virustotal_api_key: Optional[str] = None
     urlhaus_enabled: bool = True
     timeout_seconds: float = 2.0
     max_retries: int = 2

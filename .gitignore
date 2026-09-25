@@ -34,5 +34,6 @@ phishguard_venv/
 .pytest_cache/
 .coverage
 htmlcov/
+ml_pipeline/data/benchmarks/
 .claude/settings.local.json
 ~/

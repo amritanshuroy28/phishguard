@@ -56,6 +56,7 @@ export async function analyzeUrl(url, options = {}) {
     url,
     include_raw_features: options.includeFeatures || false,
     enable_cti: options.enableCti !== false,
+    fast_mode: options.fastMode || false,
   })
   return response.data
 }
@@ -67,6 +68,7 @@ export async function batchAnalyze(urls, options = {}) {
   const response = await api.post('/analyze/batch', {
     urls,
     enable_cti: options.enableCti !== false,
+    fast_mode: options.fastMode || false,
   })
   return response.data
 }

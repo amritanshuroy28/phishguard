@@ -25,7 +25,7 @@ export function RiskBadge({ score, size = 'md' }) {
  * Score Circle Component
  */
 export function ScoreCircle({ score, size = 80 }) {
-  const { level, color } = getRiskLevel(score)
+  const { level } = getRiskLevel(score)
   const circumference = 2 * Math.PI * (size / 2 - 4)
   const progress = (score / 100) * circumference
 

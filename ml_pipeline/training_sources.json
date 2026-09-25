@@ -1,0 +1,24 @@
+{
+  "name": "historical-phishguard-training-sources-2025-09-01",
+  "description": "Pinned historical sources used for fitting. These are older than and evaluated separately from the 2026-09-06 external benchmark.",
+  "sources": [
+    {
+      "name": "Phishing.Database active links 2025-08-29",
+      "label": "phishing",
+      "format": "line_url",
+      "url": "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/e5ad6240868d1c4f872d569ea907f1077df22e8e/phishing-links-ACTIVE.txt",
+      "sha256": "fa6a19901aa7a3649a00b0379286d1076445fb6fb35f3edc32ab4f2e97129851",
+      "max_rows": 50000,
+      "license": "See the upstream Phishing.Database repository."
+    },
+    {
+      "name": "Tranco list 3QQZL",
+      "label": "legitimate",
+      "format": "ranked_domain",
+      "url": "https://tranco-list.eu/download/3QQZL/1000000",
+      "sha256": "8ed39313c266d5b6184deb5c28253b17cae7f6805beb51e78ff5717835f30d90",
+      "max_rows": 50000,
+      "license": "Tranco source-provider terms apply; see https://tranco-list.eu/."
+    }
+  ]
+}

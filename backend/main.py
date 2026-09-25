@@ -102,8 +102,8 @@ def create_app() -> FastAPI:
 PhishGuard provides real-time analysis of URLs to detect phishing attempts.
 It combines:
 
-- **Machine Learning** - XGBoost classifier trained on 35+ URL features
-- **Threat Intelligence** - VirusTotal and URLhaus integration
+- **Machine Learning** - XGBoost classifier trained on 42 URL features
+- **Threat Intelligence** - Optional URLhaus lookup
 - **Feature Extraction** - Lexical, structural, and behavioral analysis
 
 ### Authentication

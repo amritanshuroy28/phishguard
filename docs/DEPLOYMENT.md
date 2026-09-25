@@ -25,10 +25,9 @@ Complete deployment instructions for PhishGuard components (Backend API, React D
 - **npm/yarn**: Latest version
 - **Disk Space**: 2GB minimum (for dependencies)
 
-### Required Accounts (Optional)
+### Required Accounts
 
-- **VirusTotal API Key**: Get at https://www.virustotal.com/gui/home/upload (for threat intelligence)
-- **URLhaus API**: Free access at https://urlhaus.abuse.ch/api/ (no key required)
+No account is required. URLhaus is queried as an optional public threat-intelligence source.
 
 ### Software to Install
 
@@ -66,7 +65,6 @@ cd backend
 pip install -r requirements.txt
 
 # Set optional environment variables
-export VIRUSTOTAL_API_KEY="your-api-key-here"
 export DEBUG=true
 
 # Start development server
@@ -133,7 +131,6 @@ Type=notify
 User=phishguard
 WorkingDirectory=/home/phishguard/phishguard/backend
 Environment="PATH=/home/phishguard/phishguard/venv/bin"
-Environment="VIRUSTOTAL_API_KEY=your-key-here"
 Environment="DEBUG=false"
 ExecStart=/home/phishguard/phishguard/venv/bin/gunicorn \
   main:app \
@@ -298,7 +295,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY}
       - DEBUG=false
     restart: always
     healthcheck:
@@ -331,8 +327,8 @@ docker-compose logs -f backend
 
 | Variable | Default | Description | Example |
 |----------|---------|-------------|---------|
-| `VIRUSTOTAL_API_KEY` | - | VirusTotal API key | `your-api-key` |
-| `VIRUSTOTAL_API_URL` | https://www.virustotal.com | VirusTotal endpoint | - |
+| `DNS_WHOIS_TIMEOUT` | `6.0` | Per-lookup DNS/WHOIS timeout (seconds) | `6.0` |
+| `DNS_TIMEOUT` | `2.0` | DNS resolution timeout (seconds) | `2.0` |
 | `DEBUG` | false | Enable debug logging | `true` or `false` |
 | `HOST` | 0.0.0.0 | Server bind address | `127.0.0.1` |
 | `PORT` | 8000 | Server port | `8000` |
@@ -343,14 +339,12 @@ docker-compose logs -f backend
 **Linux/macOS:**
 
 ```bash
-export VIRUSTOTAL_API_KEY="your-key"
 export DEBUG=false
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-$env:VIRUSTOTAL_API_KEY="your-key"
 $env:DEBUG="false"
 ```
 
@@ -358,7 +352,6 @@ $env:DEBUG="false"
 
 ```bash
 # .env
-VIRUSTOTAL_API_KEY=your-key-here
 DEBUG=false
 ```
 
@@ -486,7 +479,7 @@ time curl http://localhost:8000/api/v1/analyze -X POST \
 - Error rate (target: <1%)
 - Uptime (target: 99.9%)
 - CPU/Memory usage
-- CTI API availability (VirusTotal, URLhaus)
+- URLhaus API availability
 
 ---
 
@@ -507,12 +500,12 @@ kill -9 <PID>
 uvicorn main:app --port 8001
 ```
 
-**VirusTotal API key not working:**
+**URLhaus lookup unavailable:**
 
 ```bash
-# Test API key
-curl -X GET "https://www.virustotal.com/api/v3/files" \
-  -H "x-apikey: YOUR_API_KEY"
+# The ML result is still returned if this optional lookup fails.
+curl -X POST "https://urlhaus.abuse.ch/api/" \
+  -d "url=https://example.com"
 ```
 
 **Import errors in backend:**
@@ -569,7 +562,7 @@ const API_URL = 'http://localhost:8000/api/v1';  // Update for production
 
 ## Production Checklist
 
-- [ ] Environment variables configured (VIRUSTOTAL_API_KEY, DEBUG=false)
+- [ ] Environment variables configured (DEBUG=false)
 - [ ] CORS origins configured for production domain
 - [ ] Backend running with gunicorn/systemd
 - [ ] Frontend built and deployed to static hosting
@@ -590,4 +583,3 @@ For deployment issues, check:
 2. **Browser Console**: F12 → Console tab
 3. **Network Tab**: F12 → Network tab (check API requests)
 4. **GitHub Issues**: Report bugs at the project repository
-

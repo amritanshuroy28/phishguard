@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Search, CheckCircle, XCircle, Loader2, Copy, ExternalLink } from 'lucide-react'
+import { Search, CheckCircle, XCircle, Loader2, Copy } from 'lucide-react'
 import { analyzeUrl } from '../utils/api'
 import { RiskBadge, Spinner, AlertBanner } from '../components/SharedComponents'
-import { formatTimestamp, copyToClipboard, getRiskLevel } from '../utils/helpers'
+import { copyToClipboard } from '../utils/helpers'
 
 export default function ScanURL() {
   const [url, setUrl] = useState('')
@@ -22,6 +22,9 @@ export default function ScanURL() {
   }
 
   const result = analyzeMutation.data
+  const decision = result?.decision ?? (result?.is_malicious ? 'phishing' : 'legitimate')
+  const isPhishing = decision === 'phishing'
+  const needsReview = decision === 'review'
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -83,26 +86,22 @@ export default function ScanURL() {
         <div className="bg-white rounded-lg shadow overflow-hidden">
           {/* Result Header */}
           <div className={`p-6 ${
-            result.risk_level === 'critical' || result.risk_level === 'high' ? 'bg-critical-light' :
-            result.risk_level === 'medium' ? 'bg-yellow-50' :
-            'bg-safe-light'
+            isPhishing ? 'bg-critical-light' : needsReview ? 'bg-yellow-50' : 'bg-safe-light'
           }`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                {result.risk_level === 'critical' || result.risk_level === 'high' ? (
+                {isPhishing ? (
                   <XCircle className="h-12 w-12 text-critical" />
-                ) : result.risk_level === 'medium' ? (
+                ) : needsReview ? (
                   <XCircle className="h-12 w-12 text-yellow-500" />
                 ) : (
                   <CheckCircle className="h-12 w-12 text-safe" />
                 )}
                 <div>
                   <h2 className="text-xl font-bold">
-                    {result.risk_level === 'critical' ? 'Critical Threat Detected!' :
-                     result.risk_level === 'high' ? 'Malicious URL Detected!' :
-                     result.risk_level === 'medium' ? 'Suspicious URL — Proceed with Caution' :
-                     result.risk_level === 'low' ? 'Low Risk — Likely Safe' :
-                     'URL Appears Safe'}
+                    {isPhishing ? 'Phishing URL Detected!' :
+                     needsReview ? 'Uncertain URL — Review Before Proceeding' :
+                     'URL Appears Legitimate'}
                   </h2>
                   <p className="text-gray-600">{truncateUrl(result.url)}</p>
                 </div>
@@ -129,8 +128,16 @@ export default function ScanURL() {
                   </span>
                 </div>
                 <div className="bg-gray-50 rounded p-3">
-                  <span className="text-gray-500">Confidence:</span>
+                  <span className="text-gray-500">Decision confidence:</span>
                   <span className="ml-2 font-medium">{(result.ml_confidence * 100).toFixed(1)}%</span>
+                </div>
+                <div className="bg-gray-50 rounded p-3">
+                  <span className="text-gray-500">Phishing probability:</span>
+                  <span className="ml-2 font-medium">{(result.ml_phishing_probability * 100).toFixed(1)}%</span>
+                </div>
+                <div className="bg-gray-50 rounded p-3">
+                  <span className="text-gray-500">Alert threshold:</span>
+                  <span className="ml-2 font-medium">{(result.ml_decision_threshold * 100).toFixed(1)}%</span>
                 </div>
                 <div className="bg-gray-50 rounded p-3">
                   <span className="text-gray-500">Model:</span>
